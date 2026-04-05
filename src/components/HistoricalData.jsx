@@ -4,17 +4,32 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import {
-  Search, Key, X, Loader2, ChevronDown, AlertCircle, ExternalLink,
-  Calendar, TrendingUp, Clock,
+  Search, Key, X, Loader2, ChevronDown, ChevronUp, AlertCircle, ExternalLink,
+  Calendar, TrendingUp, Clock, Download, Info, FileJson, FileSpreadsheet,
 } from 'lucide-react';
 import {
   getStoredAvKey, setStoredAvKey, clearStoredAvKey,
-  fetchDailyHistory, fetchHistoricalOptions, parseHistoricalChainByStrike,
+  fetchDailyHistory, fetchWeeklyHistory, fetchMonthlyHistory, fetchIntradayHistory,
+  fetchHistoricalOptions, parseHistoricalChainByStrike,
+  toCSV, downloadFile,
 } from '../lib/alphaVantageApi.js';
+import AlphaVantageInfo from './AlphaVantageInfo.jsx';
+
+/** Interval options for the selector */
+const INTERVALS = [
+  { value: 'intraday_1min',  label: 'Intraday 1min',  group: 'Intraday' },
+  { value: 'intraday_5min',  label: 'Intraday 5min',  group: 'Intraday' },
+  { value: 'intraday_15min', label: 'Intraday 15min', group: 'Intraday' },
+  { value: 'intraday_30min', label: 'Intraday 30min', group: 'Intraday' },
+  { value: 'intraday_60min', label: 'Intraday 60min', group: 'Intraday' },
+  { value: 'daily',          label: 'Daily',           group: 'End of Day' },
+  { value: 'weekly',         label: 'Weekly',          group: 'End of Day' },
+  { value: 'monthly',        label: 'Monthly',         group: 'End of Day' },
+];
 
 /**
  * Historical data panel with Alpha Vantage integration.
- * Shows historical price charts and historical options chains.
+ * Shows historical price charts, download options, and historical options chains.
  *
  * Props:
  *   onHistoricalQuote({ symbol, close, date }) — called when a date is selected on the chart
@@ -24,9 +39,11 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
   const [apiKey, setApiKey] = useState(getStoredAvKey);
   const [keyInput, setKeyInput] = useState(apiKey);
   const [showSettings, setShowSettings] = useState(!apiKey);
+  const [showInfo, setShowInfo] = useState(false);
 
   const [ticker, setTicker] = useState('');
   const [tickerInput, setTickerInput] = useState('');
+  const [interval, setInterval] = useState('daily');
   const [outputSize, setOutputSize] = useState('compact');
 
   const [priceData, setPriceData] = useState([]);
@@ -55,7 +72,7 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     setTicker('');
   }, []);
 
-  // Fetch historical prices
+  // Fetch historical prices based on selected interval
   const loadHistory = useCallback(async () => {
     const sym = tickerInput.trim().toUpperCase();
     if (!sym || !apiKey) return;
@@ -65,7 +82,17 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     setHistoricalChain([]);
     setSelectedDate('');
     try {
-      const data = await fetchDailyHistory(sym, apiKey, outputSize);
+      let data;
+      if (interval.startsWith('intraday_')) {
+        const ivl = interval.replace('intraday_', '');
+        data = await fetchIntradayHistory(sym, apiKey, ivl, outputSize);
+      } else if (interval === 'weekly') {
+        data = await fetchWeeklyHistory(sym, apiKey);
+      } else if (interval === 'monthly') {
+        data = await fetchMonthlyHistory(sym, apiKey);
+      } else {
+        data = await fetchDailyHistory(sym, apiKey, outputSize);
+      }
       setTicker(sym);
       setPriceData(data);
     } catch (err) {
@@ -73,26 +100,26 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     } finally {
       setLoading(false);
     }
-  }, [tickerInput, apiKey, outputSize]);
+  }, [tickerInput, apiKey, interval, outputSize]);
 
   // Fetch historical options for selected date
   const loadHistoricalOptions = useCallback(async (date) => {
     if (!ticker || !apiKey || !date) return;
-    setSelectedDate(date);
+    // Only daily/weekly/monthly dates make sense for options lookup
+    const dateOnly = date.split(' ')[0]; // strip time from intraday timestamps
+    setSelectedDate(dateOnly);
     setChainLoading(true);
     setHistoricalChain([]);
 
-    // Notify parent of the selected historical point
     const dayData = priceData.find((d) => d.date === date);
     if (dayData && onHistoricalQuote) {
-      onHistoricalQuote({ symbol: ticker, close: dayData.close, date });
+      onHistoricalQuote({ symbol: ticker, close: dayData.close, date: dateOnly });
     }
 
     try {
-      const options = await fetchHistoricalOptions(ticker, apiKey, date);
+      const options = await fetchHistoricalOptions(ticker, apiKey, dateOnly);
       setHistoricalChain(options);
-    } catch (err) {
-      // Historical options may not be available for all dates
+    } catch {
       setHistoricalChain([]);
     } finally {
       setChainLoading(false);
@@ -109,7 +136,8 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
   // Parsed chain for display
   const parsedChain = useMemo(() => {
     if (!historicalChain.length) return [];
-    const dayData = priceData.find((d) => d.date === selectedDate);
+    const dateOnly = selectedDate.split(' ')[0];
+    const dayData = priceData.find((d) => d.date.startsWith(dateOnly));
     const spot = dayData?.close || 0;
     return parseHistoricalChainByStrike(historicalChain, spot);
   }, [historicalChain, priceData, selectedDate]);
@@ -133,6 +161,25 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     [onAddLeg]
   );
 
+  // Download handlers
+  const handleDownloadCSV = useCallback(() => {
+    if (!priceData.length || !ticker) return;
+    const csv = toCSV(priceData);
+    downloadFile(csv, `${ticker}_${interval}_${priceData[0].date}_to_${priceData[priceData.length - 1].date}.csv`, 'text/csv');
+  }, [priceData, ticker, interval]);
+
+  const handleDownloadJSON = useCallback(() => {
+    if (!priceData.length || !ticker) return;
+    const json = JSON.stringify(priceData, null, 2);
+    downloadFile(json, `${ticker}_${interval}_${priceData[0].date}_to_${priceData[priceData.length - 1].date}.json`, 'application/json');
+  }, [priceData, ticker, interval]);
+
+  const handleDownloadOptionsCSV = useCallback(() => {
+    if (!historicalChain.length || !ticker) return;
+    const csv = toCSV(historicalChain);
+    downloadFile(csv, `${ticker}_options_${selectedDate}.csv`, 'text/csv');
+  }, [historicalChain, ticker, selectedDate]);
+
   // Summary stats
   const stats = useMemo(() => {
     if (priceData.length < 2) return null;
@@ -142,10 +189,13 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     const low = Math.min(...priceData.map((d) => d.low));
     const change = latest.close - earliest.close;
     const changePct = (change / earliest.close) * 100;
-    return { latest, earliest, high, low, change, changePct };
+    const avgVolume = Math.round(priceData.reduce((s, d) => s + d.volume, 0) / priceData.length);
+    return { latest, earliest, high, low, change, changePct, avgVolume };
   }, [priceData]);
 
   const fmtNum = (n, d = 2) => (n != null ? Number(n).toFixed(d) : '—');
+
+  const isIntraday = interval.startsWith('intraday_');
 
   // Custom tooltip for the price chart
   const PriceTooltip = ({ active, payload }) => {
@@ -169,14 +219,28 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     <div className="mt-4 fade-in">
       {/* API Settings Toggle */}
       <div className="flex items-center justify-between mb-2">
-        <button
-          onClick={() => setShowSettings(!showSettings)}
-          className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
-        >
-          <TrendingUp size={13} />
-          Alpha Vantage {apiKey ? '(Connected)' : '(Not configured)'}
-          <ChevronDown size={14} className={`transition-transform ${showSettings ? 'rotate-180' : ''}`} />
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
+          >
+            <TrendingUp size={13} />
+            Alpha Vantage {apiKey ? '(Connected)' : '(Not configured)'}
+            <ChevronDown size={14} className={`transition-transform ${showSettings ? 'rotate-180' : ''}`} />
+          </button>
+          <button
+            onClick={() => setShowInfo(!showInfo)}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border transition-colors ${
+              showInfo
+                ? 'bg-emerald-900/30 border-emerald-700/50 text-emerald-400'
+                : 'border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-500'
+            }`}
+            title="Show available API endpoints and ticker search"
+          >
+            <Info size={11} />
+            API Info
+          </button>
+        </div>
         {stats && (
           <div className="flex items-center gap-3 text-sm">
             <span className="font-mono font-semibold text-white">{ticker}</span>
@@ -184,10 +248,13 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
             <span className={`font-mono text-xs ${stats.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {stats.change >= 0 ? '+' : ''}{fmtNum(stats.change)} ({fmtNum(stats.changePct)}%)
             </span>
-            <span className="text-[10px] text-slate-600">{priceData.length} days</span>
+            <span className="text-[10px] text-slate-600">{priceData.length} pts</span>
           </div>
         )}
       </div>
+
+      {/* API Info Panel */}
+      {showInfo && <AlphaVantageInfo />}
 
       {/* Settings Panel */}
       {showSettings && (
@@ -235,36 +302,84 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
         </div>
       )}
 
-      {/* Ticker Search */}
+      {/* Ticker Search + Controls */}
       {apiKey && (
-        <div className="flex items-center gap-2 mb-3">
-          <div className="relative flex-1 max-w-xs">
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          {/* Ticker input */}
+          <div className="relative flex-1 max-w-[160px]">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
               value={tickerInput}
               onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
-              placeholder="Ticker (e.g. AAPL)"
+              placeholder="Ticker"
               className="w-full pl-8 pr-3 py-1.5 text-sm font-mono uppercase"
               onKeyDown={(e) => e.key === 'Enter' && loadHistory()}
             />
           </div>
+
+          {/* Interval selector */}
           <select
-            value={outputSize}
-            onChange={(e) => setOutputSize(e.target.value)}
+            value={interval}
+            onChange={(e) => setInterval(e.target.value)}
             className="text-sm py-1.5 px-2"
           >
-            <option value="compact">Last 100 Days</option>
-            <option value="full">Full History (20+ yrs)</option>
+            {(() => {
+              let lastGroup = '';
+              return INTERVALS.map((ivl) => {
+                const showGroup = ivl.group !== lastGroup;
+                lastGroup = ivl.group;
+                return (
+                  <option key={ivl.value} value={ivl.value}>
+                    {showGroup ? `${ivl.group}: ` : '  '}{ivl.label}
+                  </option>
+                );
+              });
+            })()}
           </select>
+
+          {/* Output size (only for daily and intraday) */}
+          {(interval === 'daily' || isIntraday) && (
+            <select
+              value={outputSize}
+              onChange={(e) => setOutputSize(e.target.value)}
+              className="text-sm py-1.5 px-2"
+            >
+              <option value="compact">Compact ({interval === 'daily' ? '100 days' : '100 pts'})</option>
+              <option value="full">Full ({interval === 'daily' ? '20+ yrs' : 'max'})</option>
+            </select>
+          )}
+
+          {/* Fetch button */}
           <button
             onClick={loadHistory}
             disabled={loading || !tickerInput.trim()}
             className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-xs font-semibold rounded flex items-center gap-1.5"
           >
             {loading ? <Loader2 size={13} className="animate-spin" /> : <TrendingUp size={13} />}
-            Load History
+            Load
           </button>
+
+          {/* Download buttons */}
+          {priceData.length > 0 && (
+            <div className="flex items-center gap-1 ml-auto">
+              <span className="text-[10px] text-slate-600 mr-1">Export:</span>
+              <button
+                onClick={handleDownloadCSV}
+                className="flex items-center gap-1 px-2 py-1 border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 rounded text-[11px]"
+                title="Download as CSV"
+              >
+                <FileSpreadsheet size={11} /> CSV
+              </button>
+              <button
+                onClick={handleDownloadJSON}
+                className="flex items-center gap-1 px-2 py-1 border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 rounded text-[11px]"
+                title="Download as JSON"
+              >
+                <FileJson size={11} /> JSON
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -281,7 +396,10 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
           <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
               <Calendar size={12} className="inline mr-1.5" />
-              Historical Prices — {ticker}
+              {ticker} — {INTERVALS.find((i) => i.value === interval)?.label || 'Daily'}
+              <span className="text-slate-600 ml-2 normal-case">
+                {priceData[0].date} to {priceData[priceData.length - 1].date}
+              </span>
             </span>
             {selectedDate && (
               <span className="text-xs text-emerald-400 font-mono flex items-center gap-1">
@@ -296,7 +414,7 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
                 <XAxis
                   dataKey="date"
                   tick={{ fill: '#64748b', fontSize: 10 }}
-                  tickFormatter={(d) => d.slice(5)}
+                  tickFormatter={(d) => isIntraday ? d.slice(11, 16) : d.slice(5)}
                   interval="preserveStartEnd"
                   stroke="#334155"
                 />
@@ -327,18 +445,21 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
               </ComposedChart>
             </ResponsiveContainer>
             <p className="text-[10px] text-slate-600 mt-1">
-              Click a date on the chart to load historical options for that day
+              {isIntraday
+                ? 'Intraday data shown — click a bar to select that timestamp'
+                : 'Click a date on the chart to load historical options for that day'}
             </p>
           </div>
 
           {/* Summary Stats */}
           {stats && (
-            <div className="px-3 pb-3 grid grid-cols-4 gap-2">
+            <div className="px-3 pb-3 grid grid-cols-5 gap-2">
               {[
                 { label: 'Period High', value: `$${fmtNum(stats.high)}`, color: 'text-green-400' },
                 { label: 'Period Low', value: `$${fmtNum(stats.low)}`, color: 'text-red-400' },
                 { label: 'Start', value: `$${fmtNum(stats.earliest.close)}`, color: 'text-slate-300' },
                 { label: 'End', value: `$${fmtNum(stats.latest.close)}`, color: 'text-slate-300' },
+                { label: 'Avg Volume', value: stats.avgVolume.toLocaleString(), color: 'text-slate-400' },
               ].map((s) => (
                 <div key={s.label} className="bg-slate-900/50 rounded px-2.5 py-1.5">
                   <div className="text-[10px] text-slate-500 uppercase">{s.label}</div>
@@ -360,6 +481,18 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
       {/* Historical Options Chain Table */}
       {parsedChain.length > 0 && (
         <div className="bg-[#111827] border border-slate-800 rounded-lg overflow-hidden mb-3">
+          <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
+            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+              Historical Options — {ticker} — {selectedDate}
+            </span>
+            <button
+              onClick={handleDownloadOptionsCSV}
+              className="flex items-center gap-1 px-2 py-0.5 border border-slate-700 text-slate-500 hover:text-slate-200 hover:border-slate-500 rounded text-[10px]"
+              title="Download options chain as CSV"
+            >
+              <Download size={10} /> Export CSV
+            </button>
+          </div>
           <div className="overflow-x-auto" style={{ maxHeight: 300 }}>
             <table className="w-full text-xs border-collapse">
               <thead className="sticky top-0 bg-[#111827] z-10">
