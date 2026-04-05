@@ -5,13 +5,14 @@ import {
 } from 'recharts';
 import {
   Plus, Trash2, Eye, EyeOff, RotateCcw, ChevronDown, ChevronUp,
-  Layers, Database,
+  Layers, Database, Clock,
 } from 'lucide-react';
 import {
   bsmPrice, legPnlAtExpiry, legPnlAtTime, legGreeks,
 } from './lib/blackScholes.js';
 import { LEG_COLORS, CATEGORIES, CAT_COLORS, PRESETS } from './lib/presets.js';
 import OptionsChain from './components/OptionsChain.jsx';
+import HistoricalData from './components/HistoricalData.jsx';
 
 let nextId = 1;
 const makeId = () => `leg-${nextId++}`;
@@ -30,6 +31,7 @@ export default function App() {
   const [activePreset, setActivePreset] = useState(null);
   const [expandPresets, setExpandPresets] = useState(true);
   const [expandChain, setExpandChain] = useState(true);
+  const [expandHistory, setExpandHistory] = useState(false);
   const [filterCat, setFilterCat] = useState(null);
   const [tickerLabel, setTickerLabel] = useState('');
 
@@ -211,6 +213,12 @@ export default function App() {
     setDaysToExpiry(dte);
   }, []);
 
+  /** Callback from HistoricalData when a date is clicked on the chart. */
+  const handleHistoricalQuote = useCallback((q) => {
+    setUnderlyingPrice(q.close);
+    setTickerLabel(`${q.symbol} — Historical (${q.date})`);
+  }, []);
+
   const filteredPresets = Object.entries(PRESETS).filter(
     ([, v]) => !filterCat || v.category === filterCat
   );
@@ -312,6 +320,24 @@ export default function App() {
               onAddLeg={addLegFromChain}
               onQuoteLoaded={handleQuoteLoaded}
               onDteLoaded={handleDteLoaded}
+            />
+          )}
+        </div>
+
+        {/* ── Historical Data ─────────────────────────────── */}
+        <div>
+          <button
+            onClick={() => setExpandHistory(!expandHistory)}
+            className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
+          >
+            <Clock size={13} />
+            Historical Data
+            {expandHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {expandHistory && (
+            <HistoricalData
+              onAddLeg={addLegFromChain}
+              onHistoricalQuote={handleHistoricalQuote}
             />
           )}
         </div>
@@ -647,7 +673,7 @@ export default function App() {
         {/* ── Footer ──────────────────────────────────────── */}
         <footer className="mt-6 pt-3 border-t border-slate-800 text-[11px] text-slate-600 flex flex-wrap justify-between gap-2">
           <span>Black-Scholes-Merton · European options · No transaction costs</span>
-          <span>Approach 2 · Tradier Sandbox · 15-min delayed data</span>
+          <span>Tradier Sandbox · Alpha Vantage · 15-min delayed data</span>
         </footer>
       </div>
     </div>
