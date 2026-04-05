@@ -27,6 +27,36 @@ const INTERVALS = [
   { value: 'monthly',        label: 'Monthly',         group: 'End of Day' },
 ];
 
+/** Date range presets — applied as client-side filters on the full dataset */
+const DATE_RANGES = [
+  { value: '30d',     label: '30 Days' },
+  { value: '60d',     label: '60 Days' },
+  { value: '90d',     label: '90 Days' },
+  { value: '180d',    label: '6 Months' },
+  { value: '1y',      label: '1 Year' },
+  { value: '2y',      label: '2 Years' },
+  { value: '5y',      label: '5 Years' },
+  { value: '10y',     label: '10 Years' },
+  { value: 'all',     label: 'All Data' },
+  { value: 'custom',  label: 'Custom Range' },
+];
+
+/** Calculate the cutoff date for a given range preset */
+function rangeCutoffDate(rangeValue) {
+  const now = new Date();
+  switch (rangeValue) {
+    case '30d':  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+    case '60d':  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 60);
+    case '90d':  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90);
+    case '180d': return new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+    case '1y':   return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    case '2y':   return new Date(now.getFullYear() - 2, now.getMonth(), now.getDate());
+    case '5y':   return new Date(now.getFullYear() - 5, now.getMonth(), now.getDate());
+    case '10y':  return new Date(now.getFullYear() - 10, now.getMonth(), now.getDate());
+    default:     return null; // 'all' or 'custom'
+  }
+}
+
 /**
  * Historical data panel with Alpha Vantage integration.
  * Shows historical price charts, download options, and historical options chains.
@@ -44,9 +74,11 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
   const [ticker, setTicker] = useState('');
   const [tickerInput, setTickerInput] = useState('');
   const [interval, setInterval] = useState('daily');
-  const [outputSize, setOutputSize] = useState('compact');
+  const [dateRange, setDateRange] = useState('90d');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
-  const [priceData, setPriceData] = useState([]);
+  const [rawPriceData, setRawPriceData] = useState([]); // unfiltered API response
   const [selectedDate, setSelectedDate] = useState('');
   const [historicalChain, setHistoricalChain] = useState([]);
 
@@ -67,10 +99,42 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     setKeyInput('');
     clearStoredAvKey();
     setShowSettings(true);
-    setPriceData([]);
+    setRawPriceData([]);
     setHistoricalChain([]);
     setTicker('');
   }, []);
+
+  // Client-side filtered data based on date range selection
+  const priceData = useMemo(() => {
+    if (!rawPriceData.length) return [];
+    const isIntra = interval.startsWith('intraday_');
+
+    if (dateRange === 'custom') {
+      // Filter by custom date range
+      return rawPriceData.filter((d) => {
+        const dateStr = isIntra ? d.date.split(' ')[0] : d.date;
+        if (customFrom && dateStr < customFrom) return false;
+        if (customTo && dateStr > customTo) return false;
+        return true;
+      });
+    }
+
+    if (dateRange === 'all') return rawPriceData;
+
+    const cutoff = rangeCutoffDate(dateRange);
+    if (!cutoff) return rawPriceData;
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    return rawPriceData.filter((d) => {
+      const dateStr = isIntra ? d.date.split(' ')[0] : d.date;
+      return dateStr >= cutoffStr;
+    });
+  }, [rawPriceData, dateRange, customFrom, customTo, interval]);
+
+  // Determine whether we need 'full' output (ranges > 100 days need it)
+  const needsFull = useMemo(() => {
+    return ['180d', '1y', '2y', '5y', '10y', 'all', 'custom'].includes(dateRange);
+  }, [dateRange]);
 
   // Fetch historical prices based on selected interval
   const loadHistory = useCallback(async () => {
@@ -78,9 +142,10 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     if (!sym || !apiKey) return;
     setLoading(true);
     setError('');
-    setPriceData([]);
+    setRawPriceData([]);
     setHistoricalChain([]);
     setSelectedDate('');
+    const outputSize = needsFull ? 'full' : 'compact';
     try {
       let data;
       if (interval.startsWith('intraday_')) {
@@ -94,13 +159,13 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
         data = await fetchDailyHistory(sym, apiKey, outputSize);
       }
       setTicker(sym);
-      setPriceData(data);
+      setRawPriceData(data);
     } catch (err) {
       setError(err.message || 'Failed to fetch historical data');
     } finally {
       setLoading(false);
     }
-  }, [tickerInput, apiKey, interval, outputSize]);
+  }, [tickerInput, apiKey, interval, needsFull]);
 
   // Fetch historical options for selected date
   const loadHistoricalOptions = useCallback(async (date) => {
@@ -248,7 +313,11 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
             <span className={`font-mono text-xs ${stats.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {stats.change >= 0 ? '+' : ''}{fmtNum(stats.change)} ({fmtNum(stats.changePct)}%)
             </span>
-            <span className="text-[10px] text-slate-600">{priceData.length} pts</span>
+            <span className="text-[10px] text-slate-600">
+              {priceData.length === rawPriceData.length
+                ? `${priceData.length} pts`
+                : `${priceData.length}/${rawPriceData.length} pts`}
+            </span>
           </div>
         )}
       </div>
@@ -338,16 +407,36 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
             })()}
           </select>
 
-          {/* Output size (only for daily and intraday) */}
-          {(interval === 'daily' || isIntraday) && (
-            <select
-              value={outputSize}
-              onChange={(e) => setOutputSize(e.target.value)}
-              className="text-sm py-1.5 px-2"
-            >
-              <option value="compact">Compact ({interval === 'daily' ? '100 days' : '100 pts'})</option>
-              <option value="full">Full ({interval === 'daily' ? '20+ yrs' : 'max'})</option>
-            </select>
+          {/* Date range selector */}
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className="text-sm py-1.5 px-2"
+          >
+            {DATE_RANGES.map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
+
+          {/* Custom date range inputs */}
+          {dateRange === 'custom' && (
+            <>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="text-xs py-1.5 px-2 w-[130px]"
+                title="Start date"
+              />
+              <span className="text-slate-600 text-xs">to</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="text-xs py-1.5 px-2 w-[130px]"
+                title="End date"
+              />
+            </>
           )}
 
           {/* Fetch button */}
@@ -444,11 +533,31 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
                 )}
               </ComposedChart>
             </ResponsiveContainer>
-            <p className="text-[10px] text-slate-600 mt-1">
-              {isIntraday
-                ? 'Intraday data shown — click a bar to select that timestamp'
-                : 'Click a date on the chart to load historical options for that day'}
-            </p>
+            <div className="flex items-center justify-between mt-1.5">
+              <p className="text-[10px] text-slate-600">
+                {isIntraday
+                  ? 'Intraday data shown — click a bar to select that timestamp'
+                  : 'Click a date on the chart to load historical options for that day'}
+              </p>
+              {/* Quick range pills — only when we have full data loaded */}
+              {rawPriceData.length > 100 && (
+                <div className="flex gap-1">
+                  {DATE_RANGES.filter((r) => r.value !== 'custom').map((r) => (
+                    <button
+                      key={r.value}
+                      onClick={() => setDateRange(r.value)}
+                      className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
+                        dateRange === r.value
+                          ? 'bg-emerald-900/40 border-emerald-700/50 text-emerald-400'
+                          : 'border-slate-800 text-slate-600 hover:text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Summary Stats */}
