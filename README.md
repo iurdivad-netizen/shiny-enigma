@@ -9,7 +9,7 @@ A browser-based options trading simulator with Black-Scholes pricing, multi-leg 
 - **Payoff Diagrams** — Interactive P&L charts at expiry with green/red profit/loss zones, breakeven markers, and individual leg lines
 - **Greeks Visualisation** — Real-time net Delta, Gamma, Theta, and Vega across your entire position
 - **Multi-Leg Strategy Builder** — Add/remove/edit unlimited option legs with full parameter control
-- **12 Strategy Presets** — Iron Condor, Butterfly, Straddle, Spreads, and more — click to load
+- **27 Strategy Presets** — Iron Condor, Butterfly, Straddle, Spreads, and more — click to load
 - **Time Decay Slider** — See how your P&L curve evolves as expiry approaches
 - **IV Shift Slider** — Model volatility crush or expansion scenarios
 - **Live Options Chain** *(optional)* — Connect a free Tradier sandbox API token to browse real options chains with Greeks from ORATS. Click bid/ask to add legs with market prices.

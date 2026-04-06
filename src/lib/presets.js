@@ -115,4 +115,141 @@ export const PRESETS = {
       { type: 'call', direction: 'short', strike: Math.round(S * 1.07), iv: 0.27, quantity: 2 },
     ],
   },
+
+  /* ── Additional Bullish ─────────────────────────── */
+
+  'Bull Put Spread': {
+    category: 'Bullish',
+    icon: '⤴',
+    legs: (S) => [
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.97), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.90), iv: 0.32, quantity: 1 },
+    ],
+  },
+  'Synthetic Long': {
+    category: 'Bullish',
+    icon: '⇈',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Call Backspread': {
+    category: 'Bullish',
+    icon: '⋰',
+    legs: (S) => [
+      { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'long', strike: Math.round(S * 1.05), iv: 0.28, quantity: 2 },
+    ],
+  },
+
+  /* ── Additional Bearish ─────────────────────────── */
+
+  'Bear Call Spread': {
+    category: 'Bearish',
+    icon: '⤵',
+    legs: (S) => [
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.03), iv: 0.28, quantity: 1 },
+      { type: 'call', direction: 'long', strike: Math.round(S * 1.10), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Put Ratio Spread': {
+    category: 'Bearish',
+    icon: '⫻',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.93), iv: 0.27, quantity: 2 },
+    ],
+  },
+  'Synthetic Short': {
+    category: 'Bearish',
+    icon: '⇊',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Put Backspread': {
+    category: 'Bearish',
+    icon: '⋱',
+    legs: (S) => [
+      { type: 'put', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.95), iv: 0.28, quantity: 2 },
+    ],
+  },
+
+  /* ── Additional Neutral / Income ────────────────── */
+
+  'Short Strangle': {
+    category: 'Neutral',
+    icon: '⊖',
+    legs: (S) => [
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1 },
+    ],
+  },
+  'Short Put': {
+    category: 'Neutral',
+    icon: '⊟',
+    legs: (S) => [
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1 },
+    ],
+  },
+  'Short Call': {
+    category: 'Neutral',
+    icon: '⊠',
+    legs: (S) => [
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+    ],
+  },
+  'Jade Lizard': {
+    category: 'Neutral',
+    icon: '🦎',
+    legs: (S) => [
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+      { type: 'call', direction: 'long', strike: Math.round(S * 1.10), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Broken Wing Butterfly': {
+    category: 'Neutral',
+    icon: '⏏',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.28, quantity: 2 },
+      { type: 'call', direction: 'long', strike: Math.round(S * 1.08), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Christmas Tree': {
+    category: 'Neutral',
+    icon: '🎄',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.10), iv: 0.27, quantity: 1 },
+    ],
+  },
+
+  /* ── Additional Volatile ────────────────────────── */
+
+  'Reverse Iron Condor': {
+    category: 'Volatile',
+    icon: '◇',
+    legs: (S) => [
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.90), iv: 0.32, quantity: 1 },
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'long', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.10), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Reverse Iron Butterfly': {
+    category: 'Volatile',
+    icon: '⬦',
+    legs: (S) => [
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.93), iv: 0.32, quantity: 1 },
+      { type: 'put', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.28, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.07), iv: 0.30, quantity: 1 },
+    ],
+  },
 };
