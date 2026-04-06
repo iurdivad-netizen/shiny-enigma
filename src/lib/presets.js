@@ -394,4 +394,70 @@ export const PRESETS = {
       { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
     ],
   },
+
+  /* ══════════════════════════════════════════════════════
+     Multi-Expiry Strategies
+     Each leg has its own `dte` (days to expiry).
+     ══════════════════════════════════════════════════════ */
+
+  'Calendar Call Spread': {
+    category: 'Neutral',
+    icon: '📅',
+    legs: (S) => [
+      { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1, dte: 30 },
+      { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.28, quantity: 1, dte: 60 },
+    ],
+  },
+  'Calendar Put Spread': {
+    category: 'Neutral',
+    icon: '📆',
+    legs: (S) => [
+      { type: 'put', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1, dte: 30 },
+      { type: 'put', direction: 'long', strike: Math.round(S), iv: 0.28, quantity: 1, dte: 60 },
+    ],
+  },
+  'Diagonal Call Spread': {
+    category: 'Bullish',
+    icon: '⤡',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1, dte: 60 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.30, quantity: 1, dte: 30 },
+    ],
+  },
+  'Diagonal Put Spread': {
+    category: 'Bearish',
+    icon: '⤢',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1, dte: 60 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1, dte: 30 },
+    ],
+  },
+  'Poor Man\'s Covered Call': {
+    category: 'Bullish',
+    icon: '💰',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S * 0.90), iv: 0.28, quantity: 1, dte: 90 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.30, quantity: 1, dte: 30 },
+    ],
+  },
+  'Double Calendar': {
+    category: 'Neutral',
+    icon: '📋',
+    legs: (S) => [
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1, dte: 30 },
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1, dte: 60 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.30, quantity: 1, dte: 30 },
+      { type: 'call', direction: 'long', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1, dte: 60 },
+    ],
+  },
+  'Double Diagonal': {
+    category: 'Neutral',
+    icon: '⬡',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.92), iv: 0.28, quantity: 1, dte: 60 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1, dte: 30 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.30, quantity: 1, dte: 30 },
+      { type: 'call', direction: 'long', strike: Math.round(S * 1.08), iv: 0.28, quantity: 1, dte: 60 },
+    ],
+  },
 };

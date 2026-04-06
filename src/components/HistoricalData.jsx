@@ -212,6 +212,13 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     (option, direction) => {
       if (!option || !onAddLeg) return;
       const premium = direction === 'long' ? option.ask : option.bid;
+      // Calculate DTE from option expiration if available
+      let dte;
+      if (option.expiration) {
+        const expDate = new Date(option.expiration + 'T16:00:00');
+        const refDate = selectedDate ? new Date(selectedDate + 'T16:00:00') : new Date();
+        dte = Math.max(1, Math.ceil((expDate - refDate) / (1000 * 60 * 60 * 24)));
+      }
       onAddLeg({
         type: option.option_type,
         direction,
@@ -220,10 +227,11 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
         iv: option.greeks?.mid_iv || 0.30,
         quantity: 1,
         premiumOverride: true,
+        ...(dte != null && { dte }),
         source: 'alpha_vantage',
       });
     },
-    [onAddLeg]
+    [onAddLeg, selectedDate]
   );
 
   // Download handlers

@@ -35,13 +35,16 @@ export default function App() {
   const [filterCat, setFilterCat] = useState(null);
   const [tickerLabel, setTickerLabel] = useState('');
 
-  const t = daysToExpiry / 365;
-  const viewT = (daysToExpiry * timePercent) / 100 / 365;
+  /** Per-leg time helpers — each leg can have its own DTE. */
+  const legDte = (leg) => leg.dte ?? daysToExpiry;
+  const legT = (leg) => legDte(leg) / 365;
+  const legViewT = (leg) => (legDte(leg) * timePercent) / 100 / 365;
 
   /* ── Auto-calculate premiums via BSM ──────────────────── */
   const legsWithPremiums = useMemo(() => {
     return legs.map((leg) => {
       if (leg.premiumOverride) return leg;
+      const t = legT(leg);
       const prices = bsmPrice(
         underlyingPrice, leg.strike, t, riskFreeRate,
         leg.iv + ivShift / 100, dividendYield
@@ -49,7 +52,8 @@ export default function App() {
       const premium = leg.type === 'call' ? prices.call : prices.put;
       return { ...leg, premium: Math.round(premium * 100) / 100 };
     });
-  }, [legs, underlyingPrice, t, riskFreeRate, dividendYield, ivShift]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legs, underlyingPrice, daysToExpiry, riskFreeRate, dividendYield, ivShift]);
 
   /* ── Chart data ───────────────────────────────────────── */
   const chartData = useMemo(() => {
@@ -75,8 +79,9 @@ export default function App() {
 
         if (timePercent < 100) {
           const adjIv = leg.iv + ivShift / 100;
+          const vt = legViewT(leg);
           combinedCurrent += legPnlAtTime(
-            { ...leg, iv: adjIv }, price, viewT, riskFreeRate, dividendYield
+            { ...leg, iv: adjIv }, price, vt, riskFreeRate, dividendYield
           );
         }
       });
@@ -88,7 +93,8 @@ export default function App() {
       pts.push(pt);
     }
     return pts;
-  }, [legsWithPremiums, underlyingPrice, timePercent, viewT, riskFreeRate, dividendYield, ivShift]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legsWithPremiums, underlyingPrice, timePercent, daysToExpiry, riskFreeRate, dividendYield, ivShift]);
 
   /* ── Breakevens ───────────────────────────────────────── */
   const breakevens = useMemo(() => {
@@ -112,9 +118,11 @@ export default function App() {
   const netGreeks = useMemo(() => {
     const net = { delta: 0, gamma: 0, theta: 0, vega: 0 };
     legsWithPremiums.forEach((leg) => {
+      const vt = legViewT(leg);
+      const t = legT(leg);
       const g = legGreeks(
         { ...leg, iv: leg.iv + ivShift / 100 },
-        underlyingPrice, viewT > 0 ? viewT : t, riskFreeRate, dividendYield
+        underlyingPrice, vt > 0 ? vt : t, riskFreeRate, dividendYield
       );
       net.delta += g.delta;
       net.gamma += g.gamma;
@@ -122,7 +130,8 @@ export default function App() {
       net.vega += g.vega;
     });
     return net;
-  }, [legsWithPremiums, underlyingPrice, viewT, t, riskFreeRate, dividendYield, ivShift]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legsWithPremiums, underlyingPrice, timePercent, daysToExpiry, riskFreeRate, dividendYield, ivShift]);
 
   /* ── P&L extremes + cost ──────────────────────────────── */
   const pnlExtremes = useMemo(() => {
@@ -150,8 +159,12 @@ export default function App() {
       setActivePreset(name);
       setTimePercent(100);
       setIvShift(0);
+      // If any leg in the preset has a dte, keep global at max dte for sensible slider range
+      const presetLegs = preset.legs(underlyingPrice);
+      const maxDte = Math.max(...presetLegs.map((l) => l.dte ?? daysToExpiry));
+      if (presetLegs.some((l) => l.dte != null)) setDaysToExpiry(maxDte);
     },
-    [underlyingPrice]
+    [underlyingPrice, daysToExpiry]
   );
 
   const addLeg = useCallback(() => {
@@ -240,7 +253,7 @@ export default function App() {
         )}
         {timePnl && (
           <div className={`font-mono mt-0.5 ${timePnl.value >= 0 ? 'text-green-300' : 'text-red-300'}`}>
-            {Math.round((daysToExpiry * timePercent) / 100)}d P&L: ${timePnl.value?.toLocaleString()}
+            {timePercent}% DTE P&L: ${timePnl.value?.toLocaleString()}
           </div>
         )}
       </div>
@@ -460,7 +473,7 @@ export default function App() {
                   <Line
                     dataKey="timePnl" stroke="#818cf8" strokeWidth={2}
                     strokeDasharray="6 3" dot={false} isAnimationActive={false}
-                    name={`P&L at ${Math.round((daysToExpiry * timePercent) / 100)}d`}
+                    name={`P&L at ${timePercent}% DTE`}
                   />
                 )}
                 <Line
@@ -480,7 +493,10 @@ export default function App() {
               <div className="flex justify-between mb-1.5 text-xs">
                 <span className="text-slate-400">Time to Expiry</span>
                 <span className="font-mono font-semibold text-indigo-400">
-                  {Math.round((daysToExpiry * timePercent) / 100)}d / {daysToExpiry}d
+                  {timePercent}%{' '}
+                  <span className="text-slate-500 font-normal">
+                    ({legsWithPremiums.map((l) => `${Math.round(legDte(l) * timePercent / 100)}d`).join(' / ')})
+                  </span>
                 </span>
               </div>
               <input
@@ -570,7 +586,7 @@ export default function App() {
                 <table className="w-full border-collapse text-[13px]">
                   <thead>
                     <tr className="border-b border-slate-800">
-                      {['', 'Type', 'Side', 'Strike', 'IV %', 'Qty', 'Premium', 'Δ', 'Γ', 'Θ', 'ν', ''].map((h, i) => (
+                      {['', 'Type', 'Side', 'Strike', 'IV %', 'DTE', 'Qty', 'Premium', 'Δ', 'Γ', 'Θ', 'ν', ''].map((h, i) => (
                         <th
                           key={i}
                           className="px-2.5 py-2 text-left text-[10px] text-slate-500 uppercase tracking-wider font-semibold whitespace-nowrap"
@@ -582,9 +598,11 @@ export default function App() {
                   </thead>
                   <tbody>
                     {legsWithPremiums.map((leg, i) => {
+                      const vt = legViewT(leg);
+                      const lt = legT(leg);
                       const g = legGreeks(
                         { ...leg, iv: leg.iv + ivShift / 100 },
-                        underlyingPrice, viewT > 0 ? viewT : t, riskFreeRate, dividendYield
+                        underlyingPrice, vt > 0 ? vt : lt, riskFreeRate, dividendYield
                       );
                       return (
                         <tr key={leg.id} className="border-b border-slate-800/20 fade-in">
@@ -623,6 +641,13 @@ export default function App() {
                               type="number" value={(leg.iv * 100).toFixed(0)}
                               onChange={(e) => updateLeg(leg.id, 'iv', (+e.target.value || 0) / 100)}
                               className="w-[52px] text-right" step="1"
+                            />
+                          </td>
+                          <td className="px-1.5 py-1.5">
+                            <input
+                              type="number" value={legDte(leg)}
+                              onChange={(e) => updateLeg(leg.id, 'dte', Math.max(0, +e.target.value || 0))}
+                              className="w-[52px] text-right" step="1" min="0"
                             />
                           </td>
                           <td className="px-1.5 py-1.5">
