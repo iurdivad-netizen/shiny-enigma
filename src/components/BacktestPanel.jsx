@@ -63,7 +63,8 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
   const [riskFreeRate, setRiskFreeRate] = useState(5);
 
   // Historical data
-  const [priceData, setPriceData] = useState([]);
+  const [historyRange, setHistoryRange] = useState('1y');
+  const [rawPriceData, setRawPriceData] = useState([]);
   const [loadingData, setLoadingData] = useState(false);
 
   // Entry/exit selection
@@ -78,11 +79,26 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
+  // Filter raw data by selected range
+  const priceData = useMemo(() => {
+    if (!rawPriceData.length) return [];
+    if (historyRange === 'all') return rawPriceData;
+    const now = new Date();
+    const cutoffs = {
+      '30d': 30, '90d': 90, '180d': 180,
+      '1y': 365, '2y': 730, '5y': 1825, '10y': 3650,
+    };
+    const days = cutoffs[historyRange] || 365;
+    const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return rawPriceData.filter((d) => d.date >= cutoffStr);
+  }, [rawPriceData, historyRange]);
+
   // Load historical data
   const loadData = useCallback(async () => {
     setError('');
     setLoadingData(true);
-    setPriceData([]);
+    setRawPriceData([]);
     setEntryDate('');
     setExitDate('');
     setEntryPrice(null);
@@ -91,15 +107,17 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
     try {
       const apiKey = getStoredAvKey();
       if (!apiKey) throw new Error('Alpha Vantage API key required. Set it in the Historical Data panel.');
-      const data = await fetchDailyHistory(symbol, apiKey, 'full');
+      // Always fetch full history; filter client-side for range
+      const needsFull = ['180d', '1y', '2y', '5y', '10y', 'all'].includes(historyRange);
+      const data = await fetchDailyHistory(symbol, apiKey, needsFull ? 'full' : 'compact');
       if (data.length < 10) throw new Error('Not enough historical data.');
-      setPriceData(data);
+      setRawPriceData(data);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoadingData(false);
     }
-  }, [symbol]);
+  }, [symbol, historyRange]);
 
   // Import legs from the current simulator
   const importLegs = useCallback(() => {
@@ -224,7 +242,7 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
       </div>
 
       {/* Symbol + Load */}
-      <div className="flex items-end gap-2 text-xs">
+      <div className="flex items-end gap-2 text-xs flex-wrap">
         <label className="flex flex-col gap-0.5">
           <span className="text-slate-500">Symbol</span>
           <input
@@ -232,6 +250,23 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
             className="px-2 py-1 rounded w-24" placeholder="SPY"
           />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-500">History Range</span>
+          <select
+            value={historyRange}
+            onChange={(e) => setHistoryRange(e.target.value)}
+            className="px-2 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700"
+          >
+            <option value="30d">30 Days</option>
+            <option value="90d">90 Days</option>
+            <option value="180d">6 Months</option>
+            <option value="1y">1 Year</option>
+            <option value="2y">2 Years</option>
+            <option value="5y">5 Years</option>
+            <option value="10y">10 Years</option>
+            <option value="all">All Data (20y+)</option>
+          </select>
         </label>
         <button
           onClick={loadData}
@@ -241,6 +276,11 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
           {loadingData ? <Loader size={12} className="animate-spin" /> : null}
           {loadingData ? 'Loading...' : 'Load History'}
         </button>
+        {priceData.length > 0 && (
+          <span className="text-[10px] text-slate-500 self-end pb-1">
+            {priceData.length} days ({priceData[0]?.date} → {priceData[priceData.length - 1]?.date})
+          </span>
+        )}
         <label className="flex flex-col gap-0.5">
           <span className="text-slate-500">DTE</span>
           <input type="number" value={dte} onChange={(e) => setDte(+e.target.value || 30)} className="px-2 py-1 rounded w-16" min="1" />
