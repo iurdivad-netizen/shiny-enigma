@@ -1,18 +1,22 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ReferenceLine, ResponsiveContainer, Legend,
 } from 'recharts';
 import {
   Plus, Trash2, Eye, EyeOff, RotateCcw, ChevronDown, ChevronUp,
-  Layers, Database, Clock,
+  Layers, Database, Clock, Briefcase, FlaskConical, PlayCircle,
 } from 'lucide-react';
 import {
   bsmPrice, legPnlAtExpiry, legPnlAtTime, legGreeks,
 } from './lib/blackScholes.js';
 import { LEG_COLORS, CATEGORIES, CAT_COLORS, PRESETS } from './lib/presets.js';
+import { loadPortfolios, savePortfolios, deletePortfolio } from './lib/portfolio.js';
 import OptionsChain from './components/OptionsChain.jsx';
 import HistoricalData from './components/HistoricalData.jsx';
+import PortfolioTracker from './components/PortfolioTracker.jsx';
+import BacktestPanel from './components/BacktestPanel.jsx';
+import ForwardTestPanel from './components/ForwardTestPanel.jsx';
 
 let nextId = 1;
 const makeId = () => `leg-${nextId++}`;
@@ -34,6 +38,26 @@ export default function App() {
   const [expandHistory, setExpandHistory] = useState(false);
   const [filterCat, setFilterCat] = useState(null);
   const [tickerLabel, setTickerLabel] = useState('');
+  const [expandPortfolio, setExpandPortfolio] = useState(false);
+  const [expandBacktest, setExpandBacktest] = useState(false);
+  const [expandForward, setExpandForward] = useState(false);
+  const [portfolios, setPortfolios] = useState(() => loadPortfolios());
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState(null);
+
+  /* ── Portfolio persistence ───────────────────────────── */
+  useEffect(() => {
+    savePortfolios(portfolios);
+  }, [portfolios]);
+
+  const handleDeletePortfolio = useCallback((id) => {
+    setPortfolios((prev) => deletePortfolio(prev, id));
+    if (selectedPortfolioId === id) setSelectedPortfolioId(null);
+  }, [selectedPortfolioId]);
+
+  const handleBacktestResult = useCallback((portfolio) => {
+    setPortfolios((prev) => [...prev, portfolio]);
+    setSelectedPortfolioId(portfolio.id);
+  }, []);
 
   /** Per-leg time helpers — each leg can have its own DTE. */
   const legDte = (leg) => leg.dte ?? daysToExpiry;
@@ -352,6 +376,72 @@ export default function App() {
               onAddLeg={addLegFromChain}
               onHistoricalQuote={handleHistoricalQuote}
             />
+          )}
+        </div>
+
+        {/* ── Backtesting ──────────────────────────────────── */}
+        <div>
+          <button
+            onClick={() => setExpandBacktest(!expandBacktest)}
+            className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
+          >
+            <FlaskConical size={13} />
+            Backtesting
+            {expandBacktest ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {expandBacktest && (
+            <div className="fade-in">
+              <BacktestPanel onResult={handleBacktestResult} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Forward Testing (Paper Trading) ────────────── */}
+        <div>
+          <button
+            onClick={() => setExpandForward(!expandForward)}
+            className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
+          >
+            <PlayCircle size={13} />
+            Forward Testing
+            {expandForward ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {expandForward && (
+            <div className="fade-in">
+              <ForwardTestPanel
+                portfolios={portfolios}
+                setPortfolios={setPortfolios}
+                underlyingPrice={underlyingPrice}
+                symbol={tickerLabel.split(' ')[0] || ''}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* ── Portfolio Tracker ───────────────────────────── */}
+        <div>
+          <button
+            onClick={() => setExpandPortfolio(!expandPortfolio)}
+            className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
+          >
+            <Briefcase size={13} />
+            Portfolio Tracker
+            {portfolios.length > 0 && (
+              <span className="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded-full text-slate-400 normal-case">
+                {portfolios.length}
+              </span>
+            )}
+            {expandPortfolio ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {expandPortfolio && (
+            <div className="fade-in">
+              <PortfolioTracker
+                portfolios={portfolios}
+                onDelete={handleDeletePortfolio}
+                onSelect={setSelectedPortfolioId}
+                selectedId={selectedPortfolioId}
+              />
+            </div>
           )}
         </div>
 
