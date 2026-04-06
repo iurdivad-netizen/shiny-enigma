@@ -391,7 +391,11 @@ export default function App() {
           </button>
           {expandBacktest && (
             <div className="fade-in">
-              <BacktestPanel onResult={handleBacktestResult} />
+              <BacktestPanel
+                onResult={handleBacktestResult}
+                currentLegs={legsWithPremiums}
+                underlyingPrice={underlyingPrice}
+              />
             </div>
           )}
         </div>
