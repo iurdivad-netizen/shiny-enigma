@@ -252,4 +252,146 @@ export const PRESETS = {
       { type: 'call', direction: 'short', strike: Math.round(S * 1.07), iv: 0.30, quantity: 1 },
     ],
   },
+
+  /* ── Hedging / Protective ───────────────────────── */
+
+  'Protective Put': {
+    category: 'Bullish',
+    icon: '🛡',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1 },
+    ],
+  },
+  'Collar': {
+    category: 'Neutral',
+    icon: '⌁',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+    ],
+  },
+
+  /* ── Volatility Bias ────────────────────────────── */
+
+  'Strip': {
+    category: 'Volatile',
+    icon: '⫼',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 2 },
+    ],
+  },
+  'Strap': {
+    category: 'Volatile',
+    icon: '⫿',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 2 },
+      { type: 'put', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Gut Strangle': {
+    category: 'Volatile',
+    icon: '⥮',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'long', strike: Math.round(S * 1.05), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Short Gut Strangle': {
+    category: 'Neutral',
+    icon: '⥯',
+    legs: (S) => [
+      { type: 'call', direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 1.05), iv: 0.30, quantity: 1 },
+    ],
+  },
+
+  /* ── Butterfly / Condor Variants ────────────────── */
+
+  'Short Butterfly': {
+    category: 'Volatile',
+    icon: '⋈',
+    legs: (S) => [
+      { type: 'call', direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.28, quantity: 2 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Put Butterfly': {
+    category: 'Neutral',
+    icon: '🦋',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S), iv: 0.28, quantity: 2 },
+      { type: 'put', direction: 'long', strike: Math.round(S * 1.05), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Long Call Condor': {
+    category: 'Neutral',
+    icon: '▬',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S * 0.93), iv: 0.32, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 0.97), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.03), iv: 0.28, quantity: 1 },
+      { type: 'call', direction: 'long', strike: Math.round(S * 1.07), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Long Put Condor': {
+    category: 'Neutral',
+    icon: '▭',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.93), iv: 0.32, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.97), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 1.03), iv: 0.28, quantity: 1 },
+      { type: 'put', direction: 'long', strike: Math.round(S * 1.07), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Broken Wing Put Butterfly': {
+    category: 'Neutral',
+    icon: '⏍',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S * 1.05), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S), iv: 0.28, quantity: 2 },
+      { type: 'put', direction: 'long', strike: Math.round(S * 0.92), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Put Christmas Tree': {
+    category: 'Neutral',
+    icon: '🌲',
+    legs: (S) => [
+      { type: 'put', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.90), iv: 0.27, quantity: 1 },
+    ],
+  },
+
+  /* ── Combo / Exotic ─────────────────────────────── */
+
+  'Big Lizard': {
+    category: 'Neutral',
+    icon: '🐊',
+    legs: (S) => [
+      { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'long', strike: Math.round(S * 1.07), iv: 0.28, quantity: 1 },
+    ],
+  },
+  'Box Spread': {
+    category: 'Neutral',
+    icon: '☐',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+      { type: 'put', direction: 'long', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+      { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+    ],
+  },
+  'Zebra': {
+    category: 'Bullish',
+    icon: '🦓',
+    legs: (S) => [
+      { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 2 },
+      { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+    ],
+  },
 };
