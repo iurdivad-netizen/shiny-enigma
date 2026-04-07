@@ -40,6 +40,9 @@ export default function App() {
   const [tickerLabel, setTickerLabel] = useState('');
   const [expandPortfolio, setExpandPortfolio] = useState(false);
   const [expandBacktest, setExpandBacktest] = useState(false);
+
+  // Shared historical price data (loaded in HistoricalData, reusable in BacktestPanel)
+  const [sharedPriceData, setSharedPriceData] = useState({ symbol: '', data: [] });
   const [expandForward, setExpandForward] = useState(false);
   const [portfolios, setPortfolios] = useState(() => loadPortfolios());
   const [selectedPortfolioId, setSelectedPortfolioId] = useState(null);
@@ -256,6 +259,11 @@ export default function App() {
     setTickerLabel(`${q.symbol} — Historical (${q.date})`);
   }, []);
 
+  /** Callback from HistoricalData when price data is loaded — shares it with BacktestPanel. */
+  const handleHistoricalDataLoaded = useCallback((symbol, data) => {
+    setSharedPriceData({ symbol, data });
+  }, []);
+
   const filteredPresets = Object.entries(PRESETS).filter(
     ([, v]) => !filterCat || v.category === filterCat
   );
@@ -375,6 +383,7 @@ export default function App() {
             <HistoricalData
               onAddLeg={addLegFromChain}
               onHistoricalQuote={handleHistoricalQuote}
+              onDataLoaded={handleHistoricalDataLoaded}
             />
           )}
         </div>
@@ -395,6 +404,7 @@ export default function App() {
                 onResult={handleBacktestResult}
                 currentLegs={legsWithPremiums}
                 underlyingPrice={underlyingPrice}
+                sharedPriceData={sharedPriceData}
               />
             </div>
           )}

@@ -71,7 +71,7 @@ function rangeCutoffDate(rangeValue) {
  *   onHistoricalQuote({ symbol, close, date }) — called when a date is selected on the chart
  *   onAddLeg(leg) — callback to add a historical option as a leg
  */
-export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
+export default function HistoricalData({ onHistoricalQuote, onAddLeg, onDataLoaded }) {
   const [apiKey, setApiKey] = useState(getStoredAvKey);
   const [keyInput, setKeyInput] = useState(apiKey);
   const [showSettings, setShowSettings] = useState(!apiKey);
@@ -171,6 +171,7 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
       }
       setTicker(sym);
       setRawPriceData(data);
+      if (onDataLoaded) onDataLoaded(sym, data);
     } catch (err) {
       const msg = err.message || 'Failed to fetch historical data';
       // If 'full' output failed, auto-fallback to 'compact' and retry
@@ -187,6 +188,7 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
           }
           setTicker(sym);
           setRawPriceData(data);
+          if (onDataLoaded) onDataLoaded(sym, data);
           setError('Full output not available on free tier — loaded compact (latest ~100 data points) instead.');
         } catch (retryErr) {
           setError(retryErr.message || msg);

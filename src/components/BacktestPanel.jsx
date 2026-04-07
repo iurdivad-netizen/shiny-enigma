@@ -13,7 +13,7 @@ const fmtMoney = (n) => {
   return `${sign}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-export default function BacktestPanel({ onResult, currentLegs, underlyingPrice }) {
+export default function BacktestPanel({ onResult, currentLegs, underlyingPrice, sharedPriceData }) {
   const [mode, setMode] = useState('manual'); // 'manual' | 'auto'
 
   return (
@@ -43,9 +43,9 @@ export default function BacktestPanel({ onResult, currentLegs, underlyingPrice }
       </div>
 
       {mode === 'manual' ? (
-        <ManualBacktest onResult={onResult} currentLegs={currentLegs} underlyingPrice={underlyingPrice} />
+        <ManualBacktest onResult={onResult} currentLegs={currentLegs} underlyingPrice={underlyingPrice} sharedPriceData={sharedPriceData} />
       ) : (
-        <AutoBacktest onResult={onResult} />
+        <AutoBacktest onResult={onResult} sharedPriceData={sharedPriceData} />
       )}
     </div>
   );
@@ -55,7 +55,7 @@ export default function BacktestPanel({ onResult, currentLegs, underlyingPrice }
    MANUAL BACKTEST
    ══════════════════════════════════════════════════════════ */
 
-function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
+function ManualBacktest({ onResult, currentLegs, underlyingPrice, sharedPriceData }) {
   const [symbol, setSymbol] = useState('SPY');
   const [dte, setDte] = useState(30);
   const [capital, setCapital] = useState(10000);
@@ -66,6 +66,7 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
   const [historyRange, setHistoryRange] = useState('1y');
   const [rawPriceData, setRawPriceData] = useState([]);
   const [loadingData, setLoadingData] = useState(false);
+  const [usingShared, setUsingShared] = useState(false);
 
   // Entry/exit selection
   const [entryDate, setEntryDate] = useState('');
@@ -94,10 +95,25 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
     return rawPriceData.filter((d) => d.date >= cutoffStr);
   }, [rawPriceData, historyRange]);
 
+  // Use shared data from the Historical Data panel
+  const useSharedData = useCallback(() => {
+    if (!sharedPriceData?.data?.length) return;
+    setRawPriceData(sharedPriceData.data);
+    setSymbol(sharedPriceData.symbol);
+    setUsingShared(true);
+    setEntryDate('');
+    setExitDate('');
+    setEntryPrice(null);
+    setExitPrice(null);
+    setResult(null);
+    setError('');
+  }, [sharedPriceData]);
+
   // Load historical data
   const loadData = useCallback(async () => {
     setError('');
     setLoadingData(true);
+    setUsingShared(false);
     setRawPriceData([]);
     setEntryDate('');
     setExitDate('');
@@ -107,9 +123,20 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
     try {
       const apiKey = getStoredAvKey();
       if (!apiKey) throw new Error('Alpha Vantage API key required. Set it in the Historical Data panel.');
-      // Always fetch full history; filter client-side for range
       const needsFull = ['180d', '1y', '2y', '5y', '10y', 'all'].includes(historyRange);
-      const data = await fetchDailyHistory(symbol, apiKey, needsFull ? 'full' : 'compact');
+      const outputSize = needsFull ? 'full' : 'compact';
+      let data;
+      try {
+        data = await fetchDailyHistory(symbol, apiKey, outputSize);
+      } catch (err) {
+        // If full failed, fallback to compact
+        if (outputSize === 'full') {
+          data = await fetchDailyHistory(symbol, apiKey, 'compact');
+          setError('Full output not available — loaded compact (~100 pts) instead.');
+        } else {
+          throw err;
+        }
+      }
       if (data.length < 10) throw new Error('Not enough historical data.');
       setRawPriceData(data);
     } catch (err) {
@@ -276,9 +303,18 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
           {loadingData ? <Loader size={12} className="animate-spin" /> : null}
           {loadingData ? 'Loading...' : 'Load History'}
         </button>
+        {sharedPriceData?.data?.length > 0 && (
+          <button
+            onClick={useSharedData}
+            className="flex items-center gap-1 px-3 py-1 bg-emerald-700/30 hover:bg-emerald-700/50 border border-emerald-600/40 text-emerald-400 rounded font-medium"
+            title={`Use ${sharedPriceData.symbol} data already loaded in the Historical Data panel (${sharedPriceData.data.length} pts)`}
+          >
+            Use {sharedPriceData.symbol} ({sharedPriceData.data.length} pts)
+          </button>
+        )}
         {priceData.length > 0 && (
-          <span className="text-[10px] text-slate-500 self-end pb-1">
-            {priceData.length} days ({priceData[0]?.date} → {priceData[priceData.length - 1]?.date})
+          <span className={`text-[10px] self-end pb-1 ${usingShared ? 'text-emerald-500' : 'text-slate-500'}`}>
+            {usingShared ? '● Shared — ' : ''}{priceData.length} days ({priceData[0]?.date} → {priceData[priceData.length - 1]?.date})
           </span>
         )}
         <label className="flex flex-col gap-0.5">
@@ -479,7 +515,7 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice }) {
    AUTOMATED BACKTEST
    ══════════════════════════════════════════════════════════ */
 
-function AutoBacktest({ onResult }) {
+function AutoBacktest({ onResult, sharedPriceData }) {
   const [symbol, setSymbol] = useState('SPY');
   const [strategy, setStrategy] = useState(STRATEGY_NAMES[0]);
   const [dte, setDte] = useState(30);
@@ -490,6 +526,7 @@ function AutoBacktest({ onResult }) {
   const [stopLoss, setStopLoss] = useState(0);
   const [takeProfit, setTakeProfit] = useState(0);
   const [riskFreeRate, setRiskFreeRate] = useState(5);
+  const [useShared, setUseShared] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -499,16 +536,24 @@ function AutoBacktest({ onResult }) {
     setLoading(true);
     setResult(null);
     try {
-      const apiKey = getStoredAvKey();
-      if (!apiKey) throw new Error('Alpha Vantage API key required. Set it in the Historical Data panel.');
-
-      const priceData = await fetchDailyHistory(symbol, apiKey, 'full');
-      if (priceData.length < 30) throw new Error('Not enough historical data.');
+      let priceData;
+      if (useShared && sharedPriceData?.data?.length > 0) {
+        priceData = sharedPriceData.data;
+      } else {
+        const apiKey = getStoredAvKey();
+        if (!apiKey) throw new Error('Alpha Vantage API key required. Set it in the Historical Data panel.');
+        try {
+          priceData = await fetchDailyHistory(symbol, apiKey, 'full');
+        } catch {
+          priceData = await fetchDailyHistory(symbol, apiKey, 'compact');
+        }
+      }
+      if (priceData.length < 30) throw new Error('Not enough historical data (need 30+ days).');
 
       const res = runBacktest({
         strategy,
         priceData,
-        symbol: symbol.toUpperCase(),
+        symbol: (useShared ? sharedPriceData?.symbol : symbol).toUpperCase(),
         dte,
         entryInterval,
         iv: iv / 100,
@@ -527,7 +572,7 @@ function AutoBacktest({ onResult }) {
     } finally {
       setLoading(false);
     }
-  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, riskFreeRate, onResult]);
+  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, riskFreeRate, onResult, useShared, sharedPriceData]);
 
   return (
     <div className="space-y-3">
@@ -535,13 +580,31 @@ function AutoBacktest({ onResult }) {
         Automatically runs a strategy repeatedly across the full price history at regular intervals.
       </div>
 
+      {sharedPriceData?.data?.length > 0 && (
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <input
+            type="checkbox"
+            checked={useShared}
+            onChange={(e) => setUseShared(e.target.checked)}
+            className="accent-emerald-500"
+          />
+          <span className={useShared ? 'text-emerald-400' : 'text-slate-500'}>
+            Use data from Historical Data panel
+            <span className="text-slate-600 ml-1">
+              ({sharedPriceData.symbol}, {sharedPriceData.data.length} pts, {sharedPriceData.data[0]?.date} → {sharedPriceData.data[sharedPriceData.data.length - 1]?.date})
+            </span>
+          </span>
+        </label>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
         <label className="flex flex-col gap-0.5">
           <span className="text-slate-500">Symbol</span>
           <input
-            type="text" value={symbol}
+            type="text" value={useShared ? (sharedPriceData?.symbol || symbol) : symbol}
             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
             className="px-2 py-1 rounded" placeholder="SPY"
+            disabled={useShared}
           />
         </label>
         <label className="flex flex-col gap-0.5">
