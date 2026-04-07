@@ -41,6 +41,12 @@ const DATE_RANGES = [
   { value: 'custom',  label: 'Custom Range' },
 ];
 
+/** Output-size options so users can control how much data to request from the API */
+const OUTPUT_SIZES = [
+  { value: 'compact', label: 'Compact (100 pts)' },
+  { value: 'full',    label: 'Full (20+ yrs)' },
+];
+
 /** Calculate the cutoff date for a given range preset */
 function rangeCutoffDate(rangeValue) {
   const now = new Date();
@@ -77,6 +83,7 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
   const [dateRange, setDateRange] = useState('90d');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [outputSize, setOutputSize] = useState('compact');
 
   const [rawPriceData, setRawPriceData] = useState([]); // unfiltered API response
   const [selectedDate, setSelectedDate] = useState('');
@@ -131,10 +138,15 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     });
   }, [rawPriceData, dateRange, customFrom, customTo, interval]);
 
-  // Determine whether we need 'full' output (ranges > 100 days need it)
-  const needsFull = useMemo(() => {
-    return ['180d', '1y', '2y', '5y', '10y', 'all', 'custom'].includes(dateRange);
-  }, [dateRange]);
+  // Available data range (for showing bounds to user)
+  const dataRange = useMemo(() => {
+    if (!rawPriceData.length) return null;
+    return {
+      from: rawPriceData[0].date.split(' ')[0],
+      to: rawPriceData[rawPriceData.length - 1].date.split(' ')[0],
+      points: rawPriceData.length,
+    };
+  }, [rawPriceData]);
 
   // Fetch historical prices based on selected interval
   const loadHistory = useCallback(async () => {
@@ -145,7 +157,6 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     setRawPriceData([]);
     setHistoricalChain([]);
     setSelectedDate('');
-    const outputSize = needsFull ? 'full' : 'compact';
     try {
       let data;
       if (interval.startsWith('intraday_')) {
@@ -165,7 +176,7 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
     } finally {
       setLoading(false);
     }
-  }, [tickerInput, apiKey, interval, needsFull]);
+  }, [tickerInput, apiKey, interval, outputSize]);
 
   // Fetch historical options for selected date
   const loadHistoricalOptions = useCallback(async (date) => {
@@ -415,37 +426,29 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
             })()}
           </select>
 
+          {/* Output size selector */}
+          <select
+            value={outputSize}
+            onChange={(e) => setOutputSize(e.target.value)}
+            className="text-sm py-1.5 px-2"
+            title="API output size — compact returns ~100 data points (free tier), full returns 20+ years"
+          >
+            {OUTPUT_SIZES.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+
           {/* Date range selector */}
           <select
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value)}
             className="text-sm py-1.5 px-2"
+            title="Filter loaded data by date range"
           >
             {DATE_RANGES.map((r) => (
               <option key={r.value} value={r.value}>{r.label}</option>
             ))}
           </select>
-
-          {/* Custom date range inputs */}
-          {dateRange === 'custom' && (
-            <>
-              <input
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className="text-xs py-1.5 px-2 w-[130px]"
-                title="Start date"
-              />
-              <span className="text-slate-600 text-xs">to</span>
-              <input
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className="text-xs py-1.5 px-2 w-[130px]"
-                title="End date"
-              />
-            </>
-          )}
 
           {/* Fetch button */}
           <button
@@ -477,6 +480,74 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Date range filter row — always visible when data is loaded */}
+      {apiKey && rawPriceData.length > 0 && (
+        <div className="flex items-center gap-2 mb-3 flex-wrap bg-slate-900/50 border border-slate-800 rounded-lg px-3 py-2">
+          <Calendar size={13} className="text-slate-500" />
+          <span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider mr-1">Filter:</span>
+
+          {/* From date */}
+          <label className="text-[11px] text-slate-500">From</label>
+          <input
+            type="date"
+            value={dateRange === 'custom' ? customFrom : ''}
+            onChange={(e) => { setDateRange('custom'); setCustomFrom(e.target.value); }}
+            min={dataRange?.from}
+            max={dataRange?.to}
+            className="text-xs py-1 px-2 w-[130px]"
+            title={`Earliest available: ${dataRange?.from || '—'}`}
+          />
+
+          {/* To date */}
+          <label className="text-[11px] text-slate-500">To</label>
+          <input
+            type="date"
+            value={dateRange === 'custom' ? customTo : ''}
+            onChange={(e) => { setDateRange('custom'); setCustomTo(e.target.value); }}
+            min={dataRange?.from}
+            max={dataRange?.to}
+            className="text-xs py-1 px-2 w-[130px]"
+            title={`Latest available: ${dataRange?.to || '—'}`}
+          />
+
+          {dateRange === 'custom' && (customFrom || customTo) && (
+            <button
+              onClick={() => { setDateRange('all'); setCustomFrom(''); setCustomTo(''); }}
+              className="text-[10px] text-slate-500 hover:text-slate-300 underline"
+            >
+              Clear
+            </button>
+          )}
+
+          {/* Data availability info */}
+          <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-600">
+            <span>
+              Loaded: <span className="text-slate-400 font-mono">{dataRange?.from}</span> to <span className="text-slate-400 font-mono">{dataRange?.to}</span>
+            </span>
+            <span className="text-slate-700">|</span>
+            <span>
+              <span className="text-slate-400 font-mono">{rawPriceData.length}</span> pts fetched
+              {priceData.length !== rawPriceData.length && (
+                <>, <span className="text-emerald-400 font-mono">{priceData.length}</span> shown</>
+              )}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Free tier info — show when compact data is loaded */}
+      {apiKey && rawPriceData.length > 0 && rawPriceData.length <= 100 && outputSize === 'compact' && (
+        <div className="flex items-start gap-2 text-[11px] text-slate-500 mb-3 bg-slate-900/30 border border-slate-800/50 rounded px-3 py-2">
+          <Info size={13} className="text-blue-400/60 mt-0.5 flex-shrink-0" />
+          <span>
+            <span className="text-slate-400 font-medium">Compact mode</span> returns ~100 most recent data points.
+            Switch to <span className="text-slate-400 font-medium">Full (20+ yrs)</span> for more history
+            {' '}— free tier may still return full data but uses more of your 25 daily API calls.
+            Use the date pickers above to filter within the loaded range.
+          </span>
         </div>
       )}
 
