@@ -223,8 +223,9 @@ function checkRateLimit(data) {
   if (data['Error Message']) {
     throw new Error(data['Error Message']);
   }
-  if (data['Note'] || data['Information']) {
-    throw new Error('API rate limit reached (25/day). Please try again later.');
+  const note = data['Note'] || data['Information'];
+  if (note) {
+    throw new Error(note);
   }
 }
 

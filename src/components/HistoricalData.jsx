@@ -172,7 +172,28 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
       setTicker(sym);
       setRawPriceData(data);
     } catch (err) {
-      setError(err.message || 'Failed to fetch historical data');
+      const msg = err.message || 'Failed to fetch historical data';
+      // If 'full' output failed, auto-fallback to 'compact' and retry
+      if (outputSize === 'full' && (interval === 'daily' || interval.startsWith('intraday_'))) {
+        setError(`Full output not available — falling back to compact (100 pts)…`);
+        setOutputSize('compact');
+        try {
+          let data;
+          if (interval.startsWith('intraday_')) {
+            const ivl = interval.replace('intraday_', '');
+            data = await fetchIntradayHistory(sym, apiKey, ivl, 'compact');
+          } else {
+            data = await fetchDailyHistory(sym, apiKey, 'compact');
+          }
+          setTicker(sym);
+          setRawPriceData(data);
+          setError('Full output not available on free tier — loaded compact (latest ~100 data points) instead.');
+        } catch (retryErr) {
+          setError(retryErr.message || msg);
+        }
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -543,18 +564,22 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg }) {
         <div className="flex items-start gap-2 text-[11px] text-slate-500 mb-3 bg-slate-900/30 border border-slate-800/50 rounded px-3 py-2">
           <Info size={13} className="text-blue-400/60 mt-0.5 flex-shrink-0" />
           <span>
-            <span className="text-slate-400 font-medium">Compact mode</span> returns ~100 most recent data points.
-            Switch to <span className="text-slate-400 font-medium">Full (20+ yrs)</span> for more history
-            {' '}— free tier may still return full data but uses more of your 25 daily API calls.
+            <span className="text-slate-400 font-medium">Compact mode</span> returns the ~100 most recent data points.
+            The free tier typically does not support full output — if you try Full and it fails,
+            the app will automatically fall back to compact.
             Use the date pickers above to filter within the loaded range.
           </span>
         </div>
       )}
 
-      {/* Error */}
+      {/* Error / Warning */}
       {error && (
-        <div className="flex items-center gap-2 text-red-400 text-xs mb-3 bg-red-900/20 border border-red-800/50 rounded px-3 py-2">
-          <AlertCircle size={14} /> {error}
+        <div className={`flex items-center gap-2 text-xs mb-3 rounded px-3 py-2 ${
+          rawPriceData.length > 0
+            ? 'text-amber-400 bg-amber-900/20 border border-amber-800/50'
+            : 'text-red-400 bg-red-900/20 border border-red-800/50'
+        }`}>
+          <AlertCircle size={14} className="flex-shrink-0" /> {error}
         </div>
       )}
 
