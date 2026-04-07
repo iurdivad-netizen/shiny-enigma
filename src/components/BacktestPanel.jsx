@@ -158,6 +158,12 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice, sharedPriceDat
       premium: l.premium || 0,
       useMarketPremium: false, // false = auto-calc at entry, true = use this premium
     })));
+    setEntryDate('');
+    setExitDate('');
+    setEntryPrice(null);
+    setExitPrice(null);
+    setResult(null);
+    setError('');
   }, [currentLegs]);
 
   // Add a blank leg
