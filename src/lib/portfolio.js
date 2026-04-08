@@ -199,9 +199,11 @@ export function calcMetrics(portfolio) {
     return { totalTrades: 0, winners: 0, losers: 0, winRate: 0, avgWin: 0, avgLoss: 0, profitFactor: 0, totalPnl: 0, maxDrawdown: 0, sharpe: 0 };
   }
 
+  const commissionPerContract = portfolio.config?.commissionPerContract ?? 0.65;
   const pnls = closed.map((t) => {
     const dir = t.direction === 'long' ? 1 : -1;
-    return dir * ((t.closePrice ?? t.premium) - t.premium) * t.quantity * 100;
+    const commission = t.quantity * (t._commission ?? commissionPerContract);
+    return dir * ((t.closePrice ?? t.premium) - t.premium) * t.quantity * 100 - commission * 2;
   });
 
   const winners = pnls.filter((p) => p > 0);
