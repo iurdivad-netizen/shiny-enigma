@@ -427,6 +427,8 @@ export default function App() {
                 setPortfolios={setPortfolios}
                 underlyingPrice={underlyingPrice}
                 symbol={tickerLabel.split(' ')[0] || ''}
+                currentLegs={legsWithPremiums}
+                daysToExpiry={daysToExpiry}
               />
             </div>
           )}

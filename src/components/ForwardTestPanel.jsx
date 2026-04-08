@@ -1,11 +1,11 @@
 import { useState, useCallback } from 'react';
-import { Plus, X, Camera, AlertTriangle } from 'lucide-react';
+import { Plus, X, Camera, AlertTriangle, Download } from 'lucide-react';
 import {
   createPortfolio, createTrade, addTrade, closeTrade,
   expireTrade, takeSnapshot, savePortfolios,
 } from '../lib/portfolio.js';
 
-export default function ForwardTestPanel({ portfolios, setPortfolios, underlyingPrice, symbol }) {
+export default function ForwardTestPanel({ portfolios, setPortfolios, underlyingPrice, symbol, currentLegs, daysToExpiry }) {
   const [activePortfolioId, setActivePortfolioId] = useState(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newName, setNewName] = useState('');
@@ -94,6 +94,33 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
     savePortfolios(updated);
   }, [activePf, underlyingPrice, portfolios, setPortfolios]);
 
+  const importFromSimulator = useCallback(() => {
+    if (!activePf || !currentLegs || currentLegs.length === 0) return;
+    let pf = portfolios.find((p) => p.id === activePf.id);
+    if (!pf) return;
+    for (const leg of currentLegs) {
+      const expDate = new Date();
+      const dte = leg.dte ?? daysToExpiry ?? 30;
+      expDate.setDate(expDate.getDate() + dte);
+      const trade = createTrade({
+        symbol: symbol || activePf.symbol || 'UNKNOWN',
+        type: leg.type,
+        direction: leg.direction,
+        strike: leg.strike,
+        premium: leg.premium || 0,
+        quantity: leg.quantity || 1,
+        iv: leg.iv || 0.30,
+        underlyingPrice,
+        expiration: expDate.toISOString().slice(0, 10),
+        notes: 'Imported from simulator',
+      });
+      pf = addTrade(pf, trade);
+    }
+    const updated = portfolios.map((p) => (p.id === activePf.id ? pf : p));
+    setPortfolios(updated);
+    savePortfolios(updated);
+  }, [activePf, currentLegs, daysToExpiry, symbol, underlyingPrice, portfolios, setPortfolios]);
+
   return (
     <div className="space-y-3">
       {/* Portfolio selector */}
@@ -120,6 +147,15 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
             className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded font-medium"
           >
             <Camera size={12} /> Snapshot
+          </button>
+        )}
+        {activePf && currentLegs && currentLegs.length > 0 && (
+          <button
+            onClick={importFromSimulator}
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 rounded font-medium"
+            title={`Import ${currentLegs.length} leg(s) from the simulator as trades`}
+          >
+            <Download size={12} /> Import from Simulator ({currentLegs.length})
           </button>
         )}
       </div>
