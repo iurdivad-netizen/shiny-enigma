@@ -18,6 +18,44 @@ export default function PortfolioTracker({ portfolios, onDelete, onSelect, selec
   const [detailId, setDetailId] = useState(null);
   const detail = portfolios.find((p) => p.id === detailId);
 
+  // Aggregate metrics across all portfolios in this view
+  const aggregate = useMemo(() => {
+    if (portfolios.length === 0) return null;
+    const allMetrics = portfolios.map((pf) => calcMetrics(pf));
+    const totalPnl = allMetrics.reduce((s, m) => s + m.totalPnl, 0);
+    const totalTrades = allMetrics.reduce((s, m) => s + m.totalTrades, 0);
+    const totalWinners = allMetrics.reduce((s, m) => s + m.winners, 0);
+    const totalLosers = allMetrics.reduce((s, m) => s + m.losers, 0);
+    const winRate = totalTrades > 0 ? totalWinners / totalTrades : 0;
+
+    const grossWin = allMetrics.reduce((s, m) => s + m.avgWin * m.winners, 0);
+    const grossLoss = allMetrics.reduce((s, m) => s + m.avgLoss * m.losers, 0);
+    const profitFactor = grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? Infinity : 0;
+
+    // Worst drawdown across portfolios
+    const maxDrawdown = Math.max(0, ...allMetrics.map((m) => m.maxDrawdown));
+
+    // Best and worst portfolios
+    const sorted = [...portfolios].map((pf, i) => ({ pf, pnl: allMetrics[i].totalPnl }));
+    sorted.sort((a, b) => b.pnl - a.pnl);
+    const best = sorted[0];
+    const worst = sorted[sorted.length - 1];
+
+    // Total starting capital and ending value
+    const totalCapital = portfolios.reduce((s, pf) => s + pf.config.startingCapital, 0);
+    const totalEnding = portfolios.reduce((s, pf) => {
+      const lastSnap = pf.snapshots[pf.snapshots.length - 1];
+      return s + (lastSnap ? lastSnap.totalValue : pf.config.startingCapital);
+    }, 0);
+    const returnPct = totalCapital > 0 ? (totalEnding - totalCapital) / totalCapital : 0;
+
+    return {
+      totalPnl, totalTrades, totalWinners, totalLosers, winRate,
+      profitFactor, maxDrawdown, totalCapital, totalEnding, returnPct,
+      best, worst, count: portfolios.length,
+    };
+  }, [portfolios]);
+
   if (detail) {
     return <PortfolioDetail portfolio={detail} onBack={() => setDetailId(null)} />;
   }
@@ -29,6 +67,76 @@ export default function PortfolioTracker({ portfolios, onDelete, onSelect, selec
           No portfolios yet. Run a backtest or start forward testing to create one.
         </div>
       )}
+
+      {/* ── Aggregate Summary ────────────────────────── */}
+      {aggregate && (
+        <div className="bg-[#111827] rounded-lg border border-slate-800 p-4">
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold mb-3">
+            Summary — {aggregate.count} Portfolio{aggregate.count !== 1 ? 's' : ''}
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div>
+              <div className="text-[10px] text-slate-500">Total P&L</div>
+              <div className={`text-sm font-mono font-semibold ${aggregate.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {fmtMoney(aggregate.totalPnl)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-500">Return</div>
+              <div className={`text-sm font-mono font-semibold ${aggregate.returnPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {aggregate.returnPct >= 0 ? '+' : ''}{fmtPct(aggregate.returnPct)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-500">Win Rate</div>
+              <div className="text-sm font-mono font-semibold text-slate-200">{fmtPct(aggregate.winRate)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-500">Total Trades</div>
+              <div className="text-sm font-mono font-semibold text-slate-200">{aggregate.totalTrades}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-500">Profit Factor</div>
+              <div className="text-sm font-mono font-semibold text-slate-200">
+                {aggregate.profitFactor === Infinity ? '∞' : aggregate.profitFactor.toFixed(2)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-500">Max Drawdown</div>
+              <div className="text-sm font-mono font-semibold text-red-400">{fmtPct(aggregate.maxDrawdown)}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-800">
+            <div>
+              <div className="text-[10px] text-slate-500">Total Capital</div>
+              <div className="text-xs font-mono text-slate-300">{fmtMoney(aggregate.totalCapital)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-500">Ending Value</div>
+              <div className="text-xs font-mono text-slate-300">{fmtMoney(aggregate.totalEnding)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-500">W / L</div>
+              <div className="text-xs font-mono">
+                <span className="text-green-400">{aggregate.totalWinners}</span>
+                <span className="text-slate-600"> / </span>
+                <span className="text-red-400">{aggregate.totalLosers}</span>
+              </div>
+            </div>
+            {aggregate.count > 1 && (
+              <div>
+                <div className="text-[10px] text-slate-500">Best / Worst</div>
+                <div className="text-xs font-mono">
+                  <span className="text-green-400">{fmtMoney(aggregate.best.pnl)}</span>
+                  <span className="text-slate-600"> / </span>
+                  <span className="text-red-400">{fmtMoney(aggregate.worst.pnl)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {portfolios.map((pf) => {
         const metrics = calcMetrics(pf);
         const lastSnap = pf.snapshots[pf.snapshots.length - 1];
