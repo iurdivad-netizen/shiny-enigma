@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { Plus, X, Camera, AlertTriangle, Download } from 'lucide-react';
 import {
   createPortfolio, createTrade, addTrade, closeTrade,
-  expireTrade, takeSnapshot, savePortfolios,
+  expireTrade, takeSnapshot, savePortfolios, makeGroupId,
 } from '../lib/portfolio.js';
 
 export default function ForwardTestPanel({ portfolios, setPortfolios, underlyingPrice, symbol, currentLegs, daysToExpiry }) {
@@ -98,6 +98,7 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
     if (!activePf || !currentLegs || currentLegs.length === 0) return;
     let pf = portfolios.find((p) => p.id === activePf.id);
     if (!pf) return;
+    const gid = makeGroupId();
     for (const leg of currentLegs) {
       const expDate = new Date();
       const dte = leg.dte ?? daysToExpiry ?? 30;
@@ -113,6 +114,7 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
         underlyingPrice,
         expiration: expDate.toISOString().slice(0, 10),
         notes: 'Imported from simulator',
+        groupId: gid,
       });
       pf = addTrade(pf, trade);
     }

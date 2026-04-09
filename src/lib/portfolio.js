@@ -12,6 +12,7 @@ import { bsmPrice, legPnlAtExpiry, legGreeks } from './blackScholes.js';
 let _tradeSeq = Date.now();
 export const makeTradeId = () => `trade-${_tradeSeq++}`;
 export const makePortfolioId = () => `pf-${_tradeSeq++}`;
+export const makeGroupId = () => `grp-${_tradeSeq++}`;
 
 /* ── Trade record ───────────────────────────────────────── */
 
@@ -31,10 +32,11 @@ export const makePortfolioId = () => `pf-${_tradeSeq++}`;
  */
 export function createTrade({
   symbol, type, direction, strike, premium, quantity,
-  iv, underlyingPrice, expiration, notes = '',
+  iv, underlyingPrice, expiration, notes = '', groupId = null,
 }) {
   return {
     id: makeTradeId(),
+    groupId: groupId || makeGroupId(),
     symbol: symbol.toUpperCase(),
     type,
     direction,
@@ -200,10 +202,24 @@ export function calcMetrics(portfolio) {
   }
 
   const commissionPerContract = portfolio.config?.commissionPerContract ?? 0.65;
-  const pnls = closed.map((t) => {
-    const dir = t.direction === 'long' ? 1 : -1;
-    const commission = t.quantity * (t._commission ?? commissionPerContract);
-    return dir * ((t.closePrice ?? t.premium) - t.premium) * t.quantity * 100 - commission * 2;
+
+  // Group closed trades by groupId to evaluate multi-leg strategies as one trade
+  const groups = {};
+  for (const t of closed) {
+    const gid = t.groupId || t.id; // fallback for legacy trades without groupId
+    if (!groups[gid]) groups[gid] = [];
+    groups[gid].push(t);
+  }
+
+  // Calculate combined P&L per group
+  const pnls = Object.values(groups).map((legs) => {
+    let groupPnl = 0;
+    for (const t of legs) {
+      const dir = t.direction === 'long' ? 1 : -1;
+      const commission = t.quantity * (t._commission ?? commissionPerContract);
+      groupPnl += dir * ((t.closePrice ?? t.premium) - t.premium) * t.quantity * 100 - commission * 2;
+    }
+    return groupPnl;
   });
 
   const winners = pnls.filter((p) => p > 0);
@@ -237,11 +253,12 @@ export function calcMetrics(portfolio) {
     }
   }
 
+  const totalGroups = pnls.length;
   return {
-    totalTrades: closed.length,
+    totalTrades: totalGroups,
     winners: winners.length,
     losers: losers.length,
-    winRate: closed.length > 0 ? winners.length / closed.length : 0,
+    winRate: totalGroups > 0 ? winners.length / totalGroups : 0,
     avgWin: winners.length > 0 ? grossWin / winners.length : 0,
     avgLoss: losers.length > 0 ? grossLoss / losers.length : 0,
     profitFactor: grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? Infinity : 0,

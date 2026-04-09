@@ -8,7 +8,7 @@
 import { bsmPrice } from './blackScholes.js';
 import {
   createPortfolio, createTrade, addTrade, closeTrade,
-  expireTrade, takeSnapshot, calcMetrics,
+  expireTrade, takeSnapshot, calcMetrics, makeGroupId,
 } from './portfolio.js';
 
 /* ── Strategy definitions for backtesting ───────────────── */
@@ -116,6 +116,7 @@ export function runBacktest({
     if (daysSinceEntry >= entryInterval) {
       const legs = strategyFn(spot);
       const expDate = addDays(date, dte);
+      const gid = makeGroupId();
 
       for (const leg of legs) {
         const legIv = leg.iv || iv;
@@ -133,6 +134,7 @@ export function runBacktest({
           iv: legIv,
           underlyingPrice: spot,
           expiration: expDate,
+          groupId: gid,
         });
         trade._commission = commissionPerContract;
         portfolio = addTrade(portfolio, trade);
@@ -216,7 +218,8 @@ export function runManualBacktest({
   portfolio.config.startingCapital = startingCapital;
   portfolio.config.commissionPerContract = commissionPerContract;
 
-  // Create trades at entry
+  // Create trades at entry — all legs share one groupId
+  const gid = makeGroupId();
   for (const leg of legs) {
     const legIv = leg.iv || 0.30;
     const t = dte / 365;
@@ -233,6 +236,7 @@ export function runManualBacktest({
       iv: legIv,
       underlyingPrice: entrySpot,
       expiration: expDateStr,
+      groupId: gid,
     });
     trade._commission = commissionPerContract;
     portfolio = addTrade(portfolio, trade);
