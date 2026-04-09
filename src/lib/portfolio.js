@@ -32,7 +32,7 @@ export const makeGroupId = () => `grp-${_tradeSeq++}`;
  */
 export function createTrade({
   symbol, type, direction, strike, premium, quantity,
-  iv, underlyingPrice, expiration, notes = '', groupId = null,
+  iv, underlyingPrice, expiration, notes = '', groupId = null, openedAt = null,
 }) {
   return {
     id: makeTradeId(),
@@ -47,7 +47,7 @@ export function createTrade({
     underlyingPrice,
     expiration,
     notes,
-    openedAt: new Date().toISOString(),
+    openedAt: openedAt || new Date().toISOString(),
     closedAt: null,
     closePrice: null,
     status: 'open', // 'open' | 'closed' | 'expired'
