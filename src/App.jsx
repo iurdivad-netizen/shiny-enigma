@@ -782,7 +782,7 @@ export default function App() {
               )}
             </div>
 
-            {/* ── Portfolio Tracker ────────────────────────── */}
+            {/* ── Portfolio Tracker (backtest only) ─────────── */}
             <div>
               <button
                 onClick={() => setExpandPortfolio(!expandPortfolio)}
@@ -790,9 +790,9 @@ export default function App() {
               >
                 <Briefcase size={13} />
                 Portfolio Tracker
-                {portfolios.length > 0 && (
+                {portfolios.filter((p) => p.mode === 'backtest').length > 0 && (
                   <span className="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded-full text-slate-400 normal-case">
-                    {portfolios.length}
+                    {portfolios.filter((p) => p.mode === 'backtest').length}
                   </span>
                 )}
                 {expandPortfolio ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -800,7 +800,7 @@ export default function App() {
               {expandPortfolio && (
                 <div className="fade-in">
                   <PortfolioTracker
-                    portfolios={portfolios}
+                    portfolios={portfolios.filter((p) => p.mode === 'backtest')}
                     onDelete={handleDeletePortfolio}
                     onSelect={setSelectedPortfolioId}
                     selectedId={selectedPortfolioId}
@@ -838,7 +838,7 @@ export default function App() {
               )}
             </div>
 
-            {/* ── Portfolio Tracker ────────────────────────── */}
+            {/* ── Portfolio Tracker (forward only) ────────── */}
             <div>
               <button
                 onClick={() => setExpandPortfolio(!expandPortfolio)}
@@ -846,9 +846,9 @@ export default function App() {
               >
                 <Briefcase size={13} />
                 Portfolio Tracker
-                {portfolios.length > 0 && (
+                {portfolios.filter((p) => p.mode === 'forward').length > 0 && (
                   <span className="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded-full text-slate-400 normal-case">
-                    {portfolios.length}
+                    {portfolios.filter((p) => p.mode === 'forward').length}
                   </span>
                 )}
                 {expandPortfolio ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -856,7 +856,7 @@ export default function App() {
               {expandPortfolio && (
                 <div className="fade-in">
                   <PortfolioTracker
-                    portfolios={portfolios}
+                    portfolios={portfolios.filter((p) => p.mode === 'forward')}
                     onDelete={handleDeletePortfolio}
                     onSelect={setSelectedPortfolioId}
                     selectedId={selectedPortfolioId}
