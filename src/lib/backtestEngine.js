@@ -135,6 +135,7 @@ export function runBacktest({
           underlyingPrice: spot,
           expiration: expDate,
           groupId: gid,
+          openedAt: date,
         });
         trade._commission = commissionPerContract;
         portfolio = addTrade(portfolio, trade);
@@ -237,6 +238,7 @@ export function runManualBacktest({
       underlyingPrice: entrySpot,
       expiration: expDateStr,
       groupId: gid,
+      openedAt: entryBar.date,
     });
     trade._commission = commissionPerContract;
     portfolio = addTrade(portfolio, trade);

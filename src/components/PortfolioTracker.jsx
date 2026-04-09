@@ -326,13 +326,17 @@ function TradesTab({ portfolio }) {
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-slate-900">
             <tr className="text-slate-500 text-left">
-              <th className="px-2 py-1">Date</th>
+              <th className="px-2 py-1">Open</th>
+              <th className="px-2 py-1">Close</th>
               <th className="px-2 py-1">Type</th>
               <th className="px-2 py-1">Dir</th>
               <th className="px-2 py-1 text-right">Strike</th>
-              <th className="px-2 py-1 text-right">Entry</th>
-              <th className="px-2 py-1 text-right">Exit</th>
+              <th className="px-2 py-1 text-right">Spot@Entry</th>
+              <th className="px-2 py-1 text-right">Entry $</th>
+              <th className="px-2 py-1 text-right">Exit $</th>
+              <th className="px-2 py-1 text-right">IV</th>
               <th className="px-2 py-1 text-right">Qty</th>
+              <th className="px-2 py-1">Expiry</th>
               <th className="px-2 py-1 text-right">P&L</th>
               <th className="px-2 py-1">Status</th>
             </tr>
@@ -345,7 +349,8 @@ function TradesTab({ portfolio }) {
                 : null;
               return (
                 <tr key={t.id} className="border-t border-slate-800/50 hover:bg-slate-800/30">
-                  <td className="px-2 py-1 text-slate-400">{t.openedAt?.slice(0, 10) || '—'}</td>
+                  <td className="px-2 py-1 text-slate-300 whitespace-nowrap">{t.openedAt?.slice(0, 10) || '—'}</td>
+                  <td className="px-2 py-1 text-slate-400 whitespace-nowrap">{t.closedAt?.slice(0, 10) || '—'}</td>
                   <td className="px-2 py-1">
                     <span className={t.type === 'call' ? 'text-blue-400' : 'text-pink-400'}>
                       {t.type.toUpperCase()}
@@ -357,11 +362,18 @@ function TradesTab({ portfolio }) {
                     </span>
                   </td>
                   <td className="px-2 py-1 text-right font-mono">${t.strike}</td>
+                  <td className="px-2 py-1 text-right font-mono text-slate-300">
+                    {t.underlyingPrice != null ? `$${Number(t.underlyingPrice).toFixed(2)}` : '—'}
+                  </td>
                   <td className="px-2 py-1 text-right font-mono">${t.premium.toFixed(2)}</td>
                   <td className="px-2 py-1 text-right font-mono">
                     {t.closePrice != null ? `$${t.closePrice.toFixed(2)}` : '—'}
                   </td>
+                  <td className="px-2 py-1 text-right font-mono text-slate-400">
+                    {t.iv != null ? `${(t.iv * 100).toFixed(0)}%` : '—'}
+                  </td>
                   <td className="px-2 py-1 text-right font-mono">{t.quantity}</td>
+                  <td className="px-2 py-1 text-slate-400 whitespace-nowrap">{t.expiration?.slice(0, 10) || '—'}</td>
                   <td className={`px-2 py-1 text-right font-mono font-semibold ${
                     pnl != null ? (pnl >= 0 ? 'text-green-400' : 'text-red-400') : 'text-slate-600'
                   }`}>
