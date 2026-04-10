@@ -39,13 +39,10 @@ export default function App() {
   const [expandHistory, setExpandHistory] = useState(false);
   const [filterCat, setFilterCat] = useState(null);
   const [tickerLabel, setTickerLabel] = useState('');
-  const [expandPortfolio, setExpandPortfolio] = useState(false);
-  const [expandBacktest, setExpandBacktest] = useState(false);
   const [activeTab, setActiveTab] = useState('simulation');
 
   // Shared historical price data (loaded in HistoricalData, reusable in BacktestPanel)
   const [sharedPriceData, setSharedPriceData] = useState({ symbol: '', data: [] });
-  const [expandForward, setExpandForward] = useState(false);
   const [portfolios, setPortfolios] = useState(() => loadPortfolios());
   const [selectedPortfolioId, setSelectedPortfolioId] = useState(null);
 
@@ -396,6 +393,25 @@ export default function App() {
               )}
             </div>
 
+            {/* ── Historical Data ─────────────────────────── */}
+            <div>
+              <button
+                onClick={() => setExpandHistory(!expandHistory)}
+                className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
+              >
+                <Clock size={13} />
+                Historical Data
+                {expandHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              {expandHistory && (
+                <HistoricalData
+                  onAddLeg={addLegFromChain}
+                  onHistoricalQuote={handleHistoricalQuote}
+                  onDataLoaded={handleHistoricalDataLoaded}
+                />
+              )}
+            </div>
+
             {/* ── Strategy Presets ─────────────────────────── */}
             <div className="mt-4">
               <button
@@ -741,53 +757,23 @@ export default function App() {
         {/* ══ BACKTESTING TAB ═════════════════════════════════ */}
         {activeTab === 'backtesting' && (
           <div className="fade-in">
-            {/* ── Historical Data ─────────────────────────── */}
-            <div>
-              <button
-                onClick={() => setExpandHistory(!expandHistory)}
-                className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
-              >
-                <Clock size={13} />
-                Historical Data
-                {expandHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              {expandHistory && (
-                <HistoricalData
-                  onAddLeg={addLegFromChain}
-                  onHistoricalQuote={handleHistoricalQuote}
-                  onDataLoaded={handleHistoricalDataLoaded}
-                />
-              )}
-            </div>
-
             {/* ── Backtesting ──────────────────────────────── */}
-            <div>
-              <button
-                onClick={() => setExpandBacktest(!expandBacktest)}
-                className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
-              >
+            <div className="mt-4">
+              <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                 <FlaskConical size={13} />
                 Backtesting
-                {expandBacktest ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              {expandBacktest && (
-                <div className="fade-in">
-                  <BacktestPanel
-                    onResult={handleBacktestResult}
-                    currentLegs={legsWithPremiums}
-                    underlyingPrice={underlyingPrice}
-                    sharedPriceData={sharedPriceData}
-                  />
-                </div>
-              )}
+              </div>
+              <BacktestPanel
+                onResult={handleBacktestResult}
+                currentLegs={legsWithPremiums}
+                underlyingPrice={underlyingPrice}
+                sharedPriceData={sharedPriceData}
+              />
             </div>
 
-            {/* ── Portfolio Tracker (backtest only) ─────────── */}
-            <div>
-              <button
-                onClick={() => setExpandPortfolio(!expandPortfolio)}
-                className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
-              >
+            {/* ── Portfolio Tracker (backtest) ─────────────── */}
+            <div className="mt-5">
+              <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                 <Briefcase size={13} />
                 Portfolio Tracker
                 {portfolios.filter((p) => p.mode === 'backtest').length > 0 && (
@@ -795,18 +781,13 @@ export default function App() {
                     {portfolios.filter((p) => p.mode === 'backtest').length}
                   </span>
                 )}
-                {expandPortfolio ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              {expandPortfolio && (
-                <div className="fade-in">
-                  <PortfolioTracker
-                    portfolios={portfolios.filter((p) => p.mode === 'backtest')}
-                    onDelete={handleDeletePortfolio}
-                    onSelect={setSelectedPortfolioId}
-                    selectedId={selectedPortfolioId}
-                  />
-                </div>
-              )}
+              </div>
+              <PortfolioTracker
+                portfolios={portfolios.filter((p) => p.mode === 'backtest')}
+                onDelete={handleDeletePortfolio}
+                onSelect={setSelectedPortfolioId}
+                selectedId={selectedPortfolioId}
+              />
             </div>
           </div>
         )}
@@ -815,35 +796,24 @@ export default function App() {
         {activeTab === 'forward' && (
           <div className="fade-in">
             {/* ── Forward Testing (Paper Trading) ──────────── */}
-            <div>
-              <button
-                onClick={() => setExpandForward(!expandForward)}
-                className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
-              >
+            <div className="mt-4">
+              <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                 <PlayCircle size={13} />
                 Forward Testing
-                {expandForward ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              {expandForward && (
-                <div className="fade-in">
-                  <ForwardTestPanel
-                    portfolios={portfolios}
-                    setPortfolios={setPortfolios}
-                    underlyingPrice={underlyingPrice}
-                    symbol={tickerLabel.split(' ')[0] || ''}
-                    currentLegs={legsWithPremiums}
-                    daysToExpiry={daysToExpiry}
-                  />
-                </div>
-              )}
+              </div>
+              <ForwardTestPanel
+                portfolios={portfolios}
+                setPortfolios={setPortfolios}
+                underlyingPrice={underlyingPrice}
+                symbol={tickerLabel.split(' ')[0] || ''}
+                currentLegs={legsWithPremiums}
+                daysToExpiry={daysToExpiry}
+              />
             </div>
 
-            {/* ── Portfolio Tracker (forward only) ────────── */}
-            <div>
-              <button
-                onClick={() => setExpandPortfolio(!expandPortfolio)}
-                className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
-              >
+            {/* ── Portfolio Tracker (forward) ─────────────── */}
+            <div className="mt-5">
+              <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                 <Briefcase size={13} />
                 Portfolio Tracker
                 {portfolios.filter((p) => p.mode === 'forward').length > 0 && (
@@ -851,18 +821,13 @@ export default function App() {
                     {portfolios.filter((p) => p.mode === 'forward').length}
                   </span>
                 )}
-                {expandPortfolio ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              {expandPortfolio && (
-                <div className="fade-in">
-                  <PortfolioTracker
-                    portfolios={portfolios.filter((p) => p.mode === 'forward')}
-                    onDelete={handleDeletePortfolio}
-                    onSelect={setSelectedPortfolioId}
-                    selectedId={selectedPortfolioId}
-                  />
-                </div>
-              )}
+              </div>
+              <PortfolioTracker
+                portfolios={portfolios.filter((p) => p.mode === 'forward')}
+                onDelete={handleDeletePortfolio}
+                onSelect={setSelectedPortfolioId}
+                selectedId={selectedPortfolioId}
+              />
             </div>
           </div>
         )}
