@@ -61,6 +61,11 @@ export default function App() {
     setSelectedPortfolioId(portfolio.id);
   }, []);
 
+  const handleBacktestUpdate = useCallback((portfolio) => {
+    setPortfolios((prev) => prev.map((p) => p.id === portfolio.id ? portfolio : p));
+    setSelectedPortfolioId(portfolio.id);
+  }, []);
+
   /** Per-leg time helpers — each leg can have its own DTE. */
   const legDte = (leg) => leg.dte ?? daysToExpiry;
   const legT = (leg) => legDte(leg) / 365;
@@ -765,9 +770,11 @@ export default function App() {
               </div>
               <BacktestPanel
                 onResult={handleBacktestResult}
+                onUpdate={handleBacktestUpdate}
                 currentLegs={legsWithPremiums}
                 underlyingPrice={underlyingPrice}
                 sharedPriceData={sharedPriceData}
+                backtestPortfolios={portfolios.filter((p) => p.mode === 'backtest')}
               />
             </div>
 

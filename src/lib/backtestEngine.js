@@ -77,6 +77,7 @@ export const STRATEGY_NAMES = Object.keys(BACKTEST_STRATEGIES);
  * @param {number} [config.commissionPerContract=0.65]
  * @param {number} [config.stopLossPct=0] - Stop loss as % of premium (0 = disabled)
  * @param {number} [config.takeProfitPct=0] - Take profit as % of premium (0 = disabled)
+ * @param {Object} [config.existingPortfolio] - Append to this portfolio instead of creating a new one
  * @returns {{ portfolio: Object, metrics: Object, equityCurve: Array }}
  */
 export function runBacktest({
@@ -92,14 +93,20 @@ export function runBacktest({
   commissionPerContract = 0.65,
   stopLossPct = 0,
   takeProfitPct = 0,
+  existingPortfolio,
 }) {
   const strategyFn = BACKTEST_STRATEGIES[strategy];
   if (!strategyFn) throw new Error(`Unknown strategy: ${strategy}`);
   if (!priceData || priceData.length < 2) throw new Error('Insufficient price data');
 
-  let portfolio = createPortfolio({ name: `Backtest: ${strategy}`, mode: 'backtest', symbol });
-  portfolio.config.startingCapital = startingCapital;
-  portfolio.config.commissionPerContract = commissionPerContract;
+  let portfolio;
+  if (existingPortfolio) {
+    portfolio = existingPortfolio;
+  } else {
+    portfolio = createPortfolio({ name: `Backtest: ${strategy}`, mode: 'backtest', symbol });
+    portfolio.config.startingCapital = startingCapital;
+    portfolio.config.commissionPerContract = commissionPerContract;
+  }
 
   let daysSinceEntry = entryInterval; // Enter on first day
 
@@ -175,6 +182,7 @@ export function runBacktest({
  * @param {number} [config.startingCapital=10000]
  * @param {number} [config.commissionPerContract=0.65]
  * @param {string} [config.portfolioName]
+ * @param {Object} [config.existingPortfolio] - Append to this portfolio instead of creating a new one
  * @returns {{ portfolio: Object, metrics: Object, equityCurve: Array }}
  */
 export function runManualBacktest({
@@ -189,6 +197,7 @@ export function runManualBacktest({
   startingCapital = 10000,
   commissionPerContract = 0.65,
   portfolioName,
+  existingPortfolio,
 }) {
   if (!legs || legs.length === 0) throw new Error('No legs provided');
   if (!priceData || priceData.length < 2) throw new Error('Insufficient price data');
@@ -211,13 +220,18 @@ export function runManualBacktest({
     if (idx >= 0) endIdx = idx;
   }
 
-  let portfolio = createPortfolio({
-    name: portfolioName || `Manual: ${symbol} ${entryDate}`,
-    mode: 'backtest',
-    symbol,
-  });
-  portfolio.config.startingCapital = startingCapital;
-  portfolio.config.commissionPerContract = commissionPerContract;
+  let portfolio;
+  if (existingPortfolio) {
+    portfolio = existingPortfolio;
+  } else {
+    portfolio = createPortfolio({
+      name: portfolioName || `Manual: ${symbol} ${entryDate}`,
+      mode: 'backtest',
+      symbol,
+    });
+    portfolio.config.startingCapital = startingCapital;
+    portfolio.config.commissionPerContract = commissionPerContract;
+  }
 
   // Create trades at entry — all legs share one groupId
   const gid = makeGroupId();

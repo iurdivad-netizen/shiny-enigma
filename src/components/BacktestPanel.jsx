@@ -13,7 +13,7 @@ const fmtMoney = (n) => {
   return `${sign}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-export default function BacktestPanel({ onResult, currentLegs, underlyingPrice, sharedPriceData }) {
+export default function BacktestPanel({ onResult, onUpdate, currentLegs, underlyingPrice, sharedPriceData, backtestPortfolios }) {
   const [mode, setMode] = useState('manual'); // 'manual' | 'auto'
 
   return (
@@ -43,9 +43,9 @@ export default function BacktestPanel({ onResult, currentLegs, underlyingPrice, 
       </div>
 
       {mode === 'manual' ? (
-        <ManualBacktest onResult={onResult} currentLegs={currentLegs} underlyingPrice={underlyingPrice} sharedPriceData={sharedPriceData} />
+        <ManualBacktest onResult={onResult} onUpdate={onUpdate} currentLegs={currentLegs} underlyingPrice={underlyingPrice} sharedPriceData={sharedPriceData} backtestPortfolios={backtestPortfolios} />
       ) : (
-        <AutoBacktest onResult={onResult} sharedPriceData={sharedPriceData} />
+        <AutoBacktest onResult={onResult} onUpdate={onUpdate} sharedPriceData={sharedPriceData} backtestPortfolios={backtestPortfolios} />
       )}
     </div>
   );
@@ -55,12 +55,13 @@ export default function BacktestPanel({ onResult, currentLegs, underlyingPrice, 
    MANUAL BACKTEST
    ══════════════════════════════════════════════════════════ */
 
-function ManualBacktest({ onResult, currentLegs, underlyingPrice, sharedPriceData }) {
+function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, sharedPriceData, backtestPortfolios }) {
   const [symbol, setSymbol] = useState('SPY');
   const [dte, setDte] = useState(30);
   const [capital, setCapital] = useState(10000);
   const [commission, setCommission] = useState(0.65);
   const [riskFreeRate, setRiskFreeRate] = useState(5);
+  const [targetPortfolioId, setTargetPortfolioId] = useState(''); // '' = new portfolio
 
   // Historical data
   const [historyRange, setHistoryRange] = useState('1y');
@@ -239,6 +240,10 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice, sharedPriceDat
       if (legs.length === 0) throw new Error('Add at least one leg.');
       if (!entryDate) throw new Error('Click the chart to select an entry date.');
 
+      const existingPortfolio = targetPortfolioId
+        ? backtestPortfolios.find((p) => p.id === targetPortfolioId)
+        : undefined;
+
       const res = runManualBacktest({
         legs: legsWithEntryPremiums,
         priceData,
@@ -250,16 +255,21 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice, sharedPriceDat
         divYield: 0,
         startingCapital: capital,
         commissionPerContract: commission,
+        existingPortfolio,
       });
 
       setResult(res);
-      onResult(res.portfolio);
+      if (existingPortfolio) {
+        onUpdate(res.portfolio);
+      } else {
+        onResult(res.portfolio);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [legs, legsWithEntryPremiums, priceData, symbol, entryDate, exitDate, dte, riskFreeRate, capital, commission, onResult]);
+  }, [legs, legsWithEntryPremiums, priceData, symbol, entryDate, exitDate, dte, riskFreeRate, capital, commission, onResult, onUpdate, targetPortfolioId, backtestPortfolios]);
 
   // Thin data for chart
   const chartData = useMemo(() => {
@@ -335,6 +345,24 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice, sharedPriceDat
           <span className="text-slate-500">Rate %</span>
           <input type="number" value={riskFreeRate} onChange={(e) => setRiskFreeRate(+e.target.value || 0)} className="px-2 py-1 rounded w-16" step="0.5" />
         </label>
+      </div>
+
+      {/* Portfolio target selector */}
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-slate-500">Save to:</span>
+        <select
+          value={targetPortfolioId}
+          onChange={(e) => setTargetPortfolioId(e.target.value)}
+          className="px-2 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700 text-xs"
+        >
+          <option value="">New Portfolio</option>
+          {backtestPortfolios.map((p) => (
+            <option key={p.id} value={p.id}>{p.name} ({p.trades.length} trades)</option>
+          ))}
+        </select>
+        {targetPortfolioId && (
+          <span className="text-[10px] text-amber-400">Results will be appended to existing portfolio</span>
+        )}
       </div>
 
       {/* Price chart with click-to-select */}
@@ -521,7 +549,7 @@ function ManualBacktest({ onResult, currentLegs, underlyingPrice, sharedPriceDat
    AUTOMATED BACKTEST
    ══════════════════════════════════════════════════════════ */
 
-function AutoBacktest({ onResult, sharedPriceData }) {
+function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios }) {
   const [symbol, setSymbol] = useState('SPY');
   const [strategy, setStrategy] = useState(STRATEGY_NAMES[0]);
   const [dte, setDte] = useState(30);
@@ -536,6 +564,7 @@ function AutoBacktest({ onResult, sharedPriceData }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  const [targetPortfolioId, setTargetPortfolioId] = useState(''); // '' = new portfolio
 
   const run = useCallback(async () => {
     setError('');
@@ -556,6 +585,10 @@ function AutoBacktest({ onResult, sharedPriceData }) {
       }
       if (priceData.length < 30) throw new Error('Not enough historical data (need 30+ days).');
 
+      const existingPortfolio = targetPortfolioId
+        ? backtestPortfolios.find((p) => p.id === targetPortfolioId)
+        : undefined;
+
       const res = runBacktest({
         strategy,
         priceData,
@@ -569,16 +602,21 @@ function AutoBacktest({ onResult, sharedPriceData }) {
         commissionPerContract: commission,
         stopLossPct: stopLoss,
         takeProfitPct: takeProfit,
+        existingPortfolio,
       });
 
       setResult(res);
-      onResult(res.portfolio);
+      if (existingPortfolio) {
+        onUpdate(res.portfolio);
+      } else {
+        onResult(res.portfolio);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, riskFreeRate, onResult, useShared, sharedPriceData]);
+  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, riskFreeRate, onResult, onUpdate, useShared, sharedPriceData, targetPortfolioId, backtestPortfolios]);
 
   return (
     <div className="space-y-3">
@@ -656,6 +694,24 @@ function AutoBacktest({ onResult, sharedPriceData }) {
           <span className="text-slate-500">Take Profit % (0 = off)</span>
           <input type="number" value={takeProfit} onChange={(e) => setTakeProfit(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" />
         </label>
+      </div>
+
+      {/* Portfolio target selector */}
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-slate-500">Save to:</span>
+        <select
+          value={targetPortfolioId}
+          onChange={(e) => setTargetPortfolioId(e.target.value)}
+          className="px-2 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700 text-xs"
+        >
+          <option value="">New Portfolio</option>
+          {backtestPortfolios.map((p) => (
+            <option key={p.id} value={p.id}>{p.name} ({p.trades.length} trades)</option>
+          ))}
+        </select>
+        {targetPortfolioId && (
+          <span className="text-[10px] text-amber-400">Results will be appended to existing portfolio</span>
+        )}
       </div>
 
       <button
