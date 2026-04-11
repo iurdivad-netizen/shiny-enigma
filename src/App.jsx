@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ReferenceLine, ResponsiveContainer, Legend,
@@ -7,12 +7,17 @@ import {
   Plus, Trash2, Eye, EyeOff, RotateCcw, ChevronDown, ChevronUp,
   Layers, Database, Clock, Briefcase, FlaskConical, PlayCircle,
   LineChart, History, FastForward,
+  Save, FolderOpen, Download, Upload, X,
 } from 'lucide-react';
 import {
   bsmPrice, legPnlAtExpiry, legPnlAtTime, legGreeks,
 } from './lib/blackScholes.js';
 import { LEG_COLORS, CATEGORIES, CAT_COLORS, PRESETS } from './lib/presets.js';
 import { loadPortfolios, savePortfolios, deletePortfolio } from './lib/portfolio.js';
+import {
+  captureSession, saveSession, loadSavedSessions, deleteSavedSession,
+  exportToFile, parseImportFile,
+} from './lib/sessionStore.js';
 import OptionsChain from './components/OptionsChain.jsx';
 import HistoricalData from './components/HistoricalData.jsx';
 import PortfolioTracker from './components/PortfolioTracker.jsx';
@@ -45,6 +50,14 @@ export default function App() {
   const [sharedPriceData, setSharedPriceData] = useState({ symbol: '', data: [] });
   const [portfolios, setPortfolios] = useState(() => loadPortfolios());
   const [selectedPortfolioId, setSelectedPortfolioId] = useState(null);
+
+  /* ── Save / Load state ────────────────────────────────── */
+  const [showSaveLoad, setShowSaveLoad] = useState(false);
+  const [savedSessions, setSavedSessions] = useState(() => loadSavedSessions());
+  const [saveNameInput, setSaveNameInput] = useState('');
+  const [importError, setImportError] = useState('');
+  const [importSuccess, setImportSuccess] = useState('');
+  const fileInputRef = useRef(null);
 
   /* ── Portfolio persistence ───────────────────────────── */
   useEffect(() => {
@@ -247,6 +260,82 @@ export default function App() {
     setIvShift(0);
   }, []);
 
+  /* ── Save / Load / Export / Import handlers ──────────── */
+
+  const getCurrentSession = useCallback(() => captureSession({
+    underlyingPrice, riskFreeRate, daysToExpiry, dividendYield,
+    legs, timePercent, ivShift, tickerLabel, activePreset,
+  }), [underlyingPrice, riskFreeRate, daysToExpiry, dividendYield, legs, timePercent, ivShift, tickerLabel, activePreset]);
+
+  const restoreSession = useCallback((session) => {
+    if (typeof session.underlyingPrice === 'number') setUnderlyingPrice(session.underlyingPrice);
+    if (typeof session.riskFreeRate === 'number') setRiskFreeRate(session.riskFreeRate);
+    if (typeof session.daysToExpiry === 'number') setDaysToExpiry(session.daysToExpiry);
+    if (typeof session.dividendYield === 'number') setDividendYield(session.dividendYield);
+    if (typeof session.timePercent === 'number') setTimePercent(session.timePercent);
+    if (typeof session.ivShift === 'number') setIvShift(session.ivShift);
+    if (typeof session.tickerLabel === 'string') setTickerLabel(session.tickerLabel);
+    setActivePreset(session.activePreset ?? null);
+    if (Array.isArray(session.legs)) {
+      setLegs(session.legs.map((l) => ({ ...l, id: makeId(), visible: l.visible !== false })));
+    }
+  }, []);
+
+  const handleSave = useCallback(() => {
+    const name = saveNameInput.trim() || `Session ${new Date().toLocaleString()}`;
+    const data = getCurrentSession();
+    const updated = saveSession(name, data);
+    setSavedSessions(updated);
+    setSaveNameInput('');
+  }, [saveNameInput, getCurrentSession]);
+
+  const handleLoadSession = useCallback((entry) => {
+    restoreSession(entry.data);
+    setShowSaveLoad(false);
+    setImportError('');
+    setImportSuccess('');
+  }, [restoreSession]);
+
+  const handleDeleteSession = useCallback((id) => {
+    const updated = deleteSavedSession(id);
+    setSavedSessions(updated);
+  }, []);
+
+  const handleExport = useCallback((includePortfolios) => {
+    const data = getCurrentSession();
+    exportToFile(data, includePortfolios ? portfolios : null);
+  }, [getCurrentSession, portfolios]);
+
+  const handleImportFile = useCallback((e) => {
+    setImportError('');
+    setImportSuccess('');
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const { session, portfolios: importedPortfolios } = parseImportFile(ev.target.result);
+        restoreSession(session);
+        if (importedPortfolios && Array.isArray(importedPortfolios)) {
+          setPortfolios((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            const newOnes = importedPortfolios.filter((p) => !existingIds.has(p.id));
+            return [...prev, ...newOnes];
+          });
+        }
+        setImportSuccess(`Loaded: ${session.legs?.length || 0} legs` +
+          (importedPortfolios ? `, ${importedPortfolios.length} portfolios` : ''));
+        setShowSaveLoad(false);
+      } catch (err) {
+        setImportError(err.message || 'Failed to import file');
+      }
+    };
+    reader.readAsText(file);
+    // Reset so the same file can be imported again
+    e.target.value = '';
+  }, [restoreSession, setPortfolios]);
+
   /** Callback from OptionsChain when a quote is loaded. */
   const handleQuoteLoaded = useCallback((q) => {
     setUnderlyingPrice(q.last);
@@ -345,6 +434,37 @@ export default function App() {
             />
           </label>
           <button
+            onClick={() => { setShowSaveLoad(!showSaveLoad); setImportError(''); setImportSuccess(''); }}
+            className={`flex items-center gap-1 px-2.5 py-1 border rounded text-xs ${
+              showSaveLoad
+                ? 'border-blue-500 text-blue-400 bg-blue-500/10'
+                : 'border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500'
+            }`}
+          >
+            <Save size={13} /> Save / Load
+          </button>
+          <button
+            onClick={() => handleExport(false)}
+            className="flex items-center gap-1 px-2.5 py-1 border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 rounded text-xs"
+            title="Export session as JSON"
+          >
+            <Download size={13} /> Export
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1 px-2.5 py-1 border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 rounded text-xs"
+            title="Import session from JSON"
+          >
+            <Upload size={13} /> Import
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+          <button
             onClick={resetAll}
             className="flex items-center gap-1 px-2.5 py-1 border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 rounded text-xs"
           >
@@ -352,6 +472,113 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* ── Save / Load Panel ──────────────────────────────── */}
+      {showSaveLoad && (
+        <div className="px-5 max-w-[1280px] mx-auto fade-in">
+          <div className="mt-3 bg-[#111827] border border-slate-700 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-semibold text-slate-200">Save &amp; Load Sessions</span>
+              <button onClick={() => setShowSaveLoad(false)} className="text-slate-500 hover:text-slate-300">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Save current */}
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                placeholder="Session name (optional)"
+                value={saveNameInput}
+                onChange={(e) => setSaveNameInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                className="flex-1 text-sm px-3 py-1.5 rounded"
+              />
+              <button
+                onClick={handleSave}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold"
+              >
+                <Save size={13} /> Save Current
+              </button>
+            </div>
+
+            {/* Export with portfolios */}
+            <div className="flex gap-2 mb-4 border-t border-slate-800 pt-3">
+              <button
+                onClick={() => handleExport(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 rounded text-xs"
+              >
+                <Download size={13} /> Export Session
+              </button>
+              <button
+                onClick={() => handleExport(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 rounded text-xs"
+              >
+                <Download size={13} /> Export Session + Portfolios
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 rounded text-xs"
+              >
+                <Upload size={13} /> Import from File
+              </button>
+            </div>
+
+            {/* Status messages */}
+            {importError && (
+              <div className="mb-3 text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2">
+                {importError}
+              </div>
+            )}
+            {importSuccess && (
+              <div className="mb-3 text-xs text-green-400 bg-green-400/10 border border-green-400/20 rounded px-3 py-2">
+                {importSuccess}
+              </div>
+            )}
+
+            {/* Saved sessions list */}
+            {savedSessions.length === 0 ? (
+              <div className="text-xs text-slate-600 text-center py-3">
+                No saved sessions yet. Save your current setup to load it later.
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                {savedSessions.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between bg-slate-800/50 border border-slate-800 rounded px-3 py-2 group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-slate-200 truncate">{entry.name}</div>
+                      <div className="text-[10px] text-slate-500">
+                        {new Date(entry.savedAt).toLocaleString()}
+                        {' · '}
+                        {entry.data.legs?.length || 0} legs
+                        {entry.data.tickerLabel ? ` · ${entry.data.tickerLabel.split(' ')[0]}` : ''}
+                        {' · $'}{entry.data.underlyingPrice}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 ml-3">
+                      <button
+                        onClick={() => handleLoadSession(entry)}
+                        className="flex items-center gap-1 px-2.5 py-1 bg-blue-600/80 hover:bg-blue-500 text-white rounded text-[11px] font-medium"
+                      >
+                        <FolderOpen size={12} /> Load
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSession(entry.id)}
+                        className="p-1 text-red-500/60 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="px-5 pb-6 max-w-[1280px] mx-auto">
         {/* ── Tab Navigation ──────────────────────────────── */}
