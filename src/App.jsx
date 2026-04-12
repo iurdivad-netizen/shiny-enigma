@@ -241,6 +241,63 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [legsWithPremiums, chartData, breakevens, underlyingPrice, riskFreeRate, dividendYield, ivShift, daysToExpiry]);
 
+  /* ── Expected Value & P(Max Loss) ─────────────────────── */
+  const popMetrics = useMemo(() => {
+    if (!legsWithPremiums.length || !chartData.length || daysToExpiry <= 0) {
+      return { ev: null, probMaxLoss: null };
+    }
+    const avgIv = Math.max(
+      0.01,
+      legsWithPremiums.reduce((s, l) => s + Math.max(0, l.iv + ivShift / 100), 0) /
+        legsWithPremiums.length,
+    );
+    const T = daysToExpiry / 365;
+
+    // Risk-neutral P(S_T > K)
+    const probAbove = (K) => {
+      if (K <= 0) return 1;
+      const d2 =
+        (Math.log(underlyingPrice / K) +
+          (riskFreeRate - dividendYield - 0.5 * avgIv * avgIv) * T) /
+        (avgIv * Math.sqrt(T));
+      return normalCDF(d2);
+    };
+
+    // Expected Value: integrate PnL(S) over log-normal distribution
+    // Left tail (S < first chart price)
+    let ev = (1 - probAbove(chartData[0].price)) * chartData[0].combined;
+    // Intervals within chart range
+    for (let i = 0; i < chartData.length - 1; i++) {
+      const pSlice = probAbove(chartData[i].price) - probAbove(chartData[i + 1].price);
+      ev += pSlice * chartData[i].combined;
+    }
+    // Right tail (S > last chart price)
+    ev += probAbove(chartData[chartData.length - 1].price) * chartData[chartData.length - 1].combined;
+
+    // P(Max Loss): probability of P&L being within 5% of the worst-case value
+    const maxLossVal = pnlExtremes.maxLoss;
+    let probMaxLoss = null;
+    if (maxLossVal < -0.5) {
+      const lossThreshold = maxLossVal * 0.95;
+      let pmL = 0;
+      if (chartData[0].combined <= lossThreshold) {
+        pmL += 1 - probAbove(chartData[0].price);
+      }
+      for (let i = 0; i < chartData.length - 1; i++) {
+        if (chartData[i].combined <= lossThreshold) {
+          pmL += probAbove(chartData[i].price) - probAbove(chartData[i + 1].price);
+        }
+      }
+      if (chartData[chartData.length - 1].combined <= lossThreshold) {
+        pmL += probAbove(chartData[chartData.length - 1].price);
+      }
+      probMaxLoss = Math.max(0, Math.min(100, pmL * 100));
+    }
+
+    return { ev: Math.round(ev * 100) / 100, probMaxLoss };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legsWithPremiums, chartData, pnlExtremes, underlyingPrice, riskFreeRate, dividendYield, ivShift, daysToExpiry]);
+
   /* ── Actions ──────────────────────────────────────────── */
   const loadPreset = useCallback(
     (name) => {
@@ -287,7 +344,10 @@ export default function App() {
     setLegs((prev) =>
       prev.map((l) => {
         if (l.id !== id) return l;
-        const u = { ...l, [field]: value };
+        let sanitized = value;
+        if (field === 'iv') sanitized = Math.min(5.0, Math.max(0.001, value));
+        if (field === 'strike') sanitized = Math.max(0.01, value);
+        const u = { ...l, [field]: sanitized };
         if (field === 'premium') u.premiumOverride = true;
         return u;
       })
@@ -466,7 +526,7 @@ export default function App() {
             Spot $
             <input
               type="number" value={underlyingPrice}
-              onChange={(e) => setUnderlyingPrice(+e.target.value || 0)}
+              onChange={(e) => setUnderlyingPrice(Math.max(0.01, +e.target.value || 0.01))}
               className="w-20 text-right font-semibold text-sm" step="1"
             />
           </label>
@@ -919,6 +979,40 @@ export default function App() {
               </div>
             )}
 
+            {/* ── Probability Insights ────────────────────── */}
+            {legsWithPremiums.length > 0 && (popMetrics.ev !== null || popMetrics.probMaxLoss !== null) && (
+              <div className="mt-2 grid grid-cols-2 gap-2.5 fade-in">
+                {popMetrics.ev !== null && (
+                  <div className="bg-[#111827] rounded-md border border-slate-800 px-3 py-2.5">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Exp. Value</div>
+                    <div className={`font-mono text-base font-semibold ${popMetrics.ev >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      <span className="text-[11px] opacity-70 mr-0.5">$</span>
+                      {popMetrics.ev >= 0 ? '+' : ''}{fmtNum(popMetrics.ev)}
+                    </div>
+                  </div>
+                )}
+                {popMetrics.probMaxLoss !== null && (
+                  <div
+                    className="bg-[#111827] rounded-md border border-slate-800 px-3 py-2.5"
+                    title="Probability of finishing at or near maximum loss at expiration"
+                  >
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">P(Max Loss)</div>
+                    <div
+                      className="font-mono text-base font-semibold"
+                      style={{
+                        color: popMetrics.probMaxLoss <= 15 ? '#4ade80'
+                          : popMetrics.probMaxLoss <= 35 ? '#facc15'
+                          : '#f87171',
+                      }}
+                    >
+                      <span className="text-[11px] opacity-70 mr-0.5">%</span>
+                      {fmtNum(popMetrics.probMaxLoss, 1)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ── Breakevens ──────────────────────────────── */}
             {breakevens.length > 0 && (
               <div className="mt-2.5 flex gap-2 items-center flex-wrap fade-in">
@@ -1010,8 +1104,8 @@ export default function App() {
                                 <div className="flex items-center gap-1">
                                   <input
                                     type="number" value={leg.strike}
-                                    onChange={(e) => updateLeg(leg.id, 'strike', +e.target.value || 0)}
-                                    className="w-[70px] text-right" step="1"
+                                    onChange={(e) => updateLeg(leg.id, 'strike', +e.target.value || 0.01)}
+                                    className="w-[70px] text-right" step="1" min="0.01"
                                   />
                                   <span className={`text-[9px] px-1 py-0.5 rounded font-medium leading-none ${
                                     isAtm
@@ -1027,8 +1121,8 @@ export default function App() {
                               <td className="px-1.5 py-1.5">
                                 <input
                                   type="number" value={(leg.iv * 100).toFixed(0)}
-                                  onChange={(e) => updateLeg(leg.id, 'iv', (+e.target.value || 0) / 100)}
-                                  className="w-[52px] text-right" step="1"
+                                  onChange={(e) => updateLeg(leg.id, 'iv', (+e.target.value || 0.1) / 100)}
+                                  className="w-[52px] text-right" step="1" min="1"
                                 />
                               </td>
                               <td className="px-1.5 py-1.5">
