@@ -80,7 +80,7 @@ This is a high-value feature with low implementation effort since the math is al
 ### 2.4 Implied Volatility Smile / Surface Visualization
 **Priority: Medium** | **Complexity: Medium**
 
-When connected to the Tradier options chain, plot the IV smile (IV vs strike) and optionally an IV surface (IV vs strike vs expiration). This would help users visualize skew and term structure — data the app already fetches but doesn't visualize in this way.
+Plot the IV smile (IV vs strike) and optionally an IV surface (IV vs strike vs expiration) from the historical options chain data. This would help users visualize skew and term structure.
 
 ### 2.5 Greeks Over Price Range Charts
 **Priority: Medium** | **Complexity: Low**
@@ -134,7 +134,7 @@ The automated backtest runner iterates over potentially thousands of historical 
 ### 4.1 API Retry Logic with Exponential Backoff
 **Priority: Medium** | **Complexity: Low**
 
-Both `tradierApi.js` and `alphaVantageApi.js` make HTTP calls without retry logic. Add a shared `fetchWithRetry` utility that:
+`alphaVantageApi.js` makes HTTP calls without retry logic. Add a shared `fetchWithRetry` utility that:
 - Retries on network errors and 5xx responses
 - Uses exponential backoff (1s, 2s, 4s)
 - Surfaces clear error messages to the user
@@ -190,9 +190,6 @@ Simulate thousands of random price paths using geometric Brownian motion to esti
 
 ### 6.4 Multi-Underlying Support
 Currently the simulator assumes a single underlying. Supporting multiple underlyings would enable correlation-based strategies (e.g., pairs trades, dispersion).
-
-### 6.5 Real-Time WebSocket Data
-Replace the manual-refresh Tradier polling with WebSocket streaming for live bid/ask updates and Greeks recalculation. Tradier's production API supports WebSocket streams.
 
 ---
 
