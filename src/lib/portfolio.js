@@ -5,7 +5,7 @@
  * Persists to localStorage for forward-testing continuity.
  */
 
-import { bsmPrice, legPnlAtExpiry, legGreeks } from './blackScholes.js';
+import { bsmPrice, legGreeks } from './blackScholes.js';
 
 /* ── ID generation ──────────────────────────────────────── */
 
@@ -63,7 +63,7 @@ export function createPortfolio({ name, mode, symbol = '' }) {
     mode, // 'backtest' | 'forward'
     symbol,
     trades: [],
-    snapshots: [], // { date, totalValue, realizedPnl, unrealizedPnl, spotPrice }
+    snapshots: [], // { date, totalValue, realizedPnl, unrealizedPnl, spotPrice, delta, gamma, theta, vega }
     createdAt: new Date().toISOString(),
     config: {
       startingCapital: 10000,
@@ -181,6 +181,7 @@ export function portfolioGreeks(portfolio, currentSpot, currentDate, riskFreeRat
 
 export function takeSnapshot(portfolio, spotPrice, date, riskFreeRate = 0.05, divYield = 0) {
   const pnl = portfolioPnl(portfolio, spotPrice, date, riskFreeRate, divYield);
+  const greeks = portfolioGreeks(portfolio, spotPrice, date, riskFreeRate, divYield);
   const snapshot = {
     date: date || new Date().toISOString().slice(0, 10),
     spotPrice,
@@ -189,6 +190,10 @@ export function takeSnapshot(portfolio, spotPrice, date, riskFreeRate = 0.05, di
     totalPnl: Math.round(pnl.total * 100) / 100,
     totalValue: Math.round((portfolio.config.startingCapital + pnl.total) * 100) / 100,
     openPositions: portfolio.trades.filter((t) => t.status === 'open').length,
+    delta: Math.round(greeks.delta * 100) / 100,
+    gamma: Math.round(greeks.gamma * 10000) / 10000,
+    theta: Math.round(greeks.theta * 100) / 100,
+    vega: Math.round(greeks.vega * 100) / 100,
   };
   return { ...portfolio, snapshots: [...portfolio.snapshots, snapshot] };
 }
@@ -198,7 +203,12 @@ export function takeSnapshot(portfolio, spotPrice, date, riskFreeRate = 0.05, di
 export function calcMetrics(portfolio) {
   const closed = portfolio.trades.filter((t) => t.status !== 'open');
   if (closed.length === 0) {
-    return { totalTrades: 0, winners: 0, losers: 0, winRate: 0, avgWin: 0, avgLoss: 0, profitFactor: 0, totalPnl: 0, maxDrawdown: 0, sharpe: 0 };
+    return {
+      totalTrades: 0, winners: 0, losers: 0, winRate: 0,
+      avgWin: 0, avgLoss: 0, profitFactor: 0, totalPnl: 0,
+      maxDrawdown: 0, sharpe: 0, sortino: 0, calmar: 0,
+      maxConsecLosers: 0, yearlyReturns: [],
+    };
   }
 
   const commissionPerContract = portfolio.config?.commissionPerContract ?? 0.65;
@@ -228,6 +238,18 @@ export function calcMetrics(portfolio) {
   const grossWin = winners.reduce((s, p) => s + p, 0);
   const grossLoss = Math.abs(losers.reduce((s, p) => s + p, 0));
 
+  // Max consecutive losers
+  let maxConsecLosers = 0;
+  let consecLosers = 0;
+  for (const p of pnls) {
+    if (p < 0) {
+      consecLosers++;
+      if (consecLosers > maxConsecLosers) maxConsecLosers = consecLosers;
+    } else {
+      consecLosers = 0;
+    }
+  }
+
   // Max drawdown from snapshots
   let maxDrawdown = 0;
   let peak = portfolio.config.startingCapital;
@@ -237,8 +259,9 @@ export function calcMetrics(portfolio) {
     if (dd > maxDrawdown) maxDrawdown = dd;
   }
 
-  // Simple Sharpe approximation from snapshot returns
+  // Daily returns for Sharpe and Sortino
   let sharpe = 0;
+  let sortino = 0;
   if (portfolio.snapshots.length > 2) {
     const returns = [];
     for (let i = 1; i < portfolio.snapshots.length; i++) {
@@ -250,8 +273,45 @@ export function calcMetrics(portfolio) {
       const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / (returns.length - 1);
       const std = Math.sqrt(variance);
       if (std > 0) sharpe = (mean / std) * Math.sqrt(252);
+
+      // Sortino: penalise downside deviation only (use target return = 0)
+      const downsideReturns = returns.filter((r) => r < 0);
+      if (downsideReturns.length > 0) {
+        const downsideVariance = downsideReturns.reduce((s, r) => s + r * r, 0) / downsideReturns.length;
+        const downsideStd = Math.sqrt(downsideVariance);
+        if (downsideStd > 0) sortino = (mean / downsideStd) * Math.sqrt(252);
+      }
     }
   }
+
+  // Calmar ratio: annualised return / max drawdown
+  let calmar = 0;
+  if (portfolio.snapshots.length > 1 && maxDrawdown > 0) {
+    const firstSnap = portfolio.snapshots[0];
+    const lastSnap = portfolio.snapshots[portfolio.snapshots.length - 1];
+    const snapDays = portfolio.snapshots.length;
+    if (firstSnap.totalValue > 0) {
+      const annualisedReturn =
+        Math.pow(lastSnap.totalValue / firstSnap.totalValue, 252 / snapDays) - 1;
+      calmar = annualisedReturn / maxDrawdown;
+    }
+  }
+
+  // Per-year return breakdown
+  const yearMap = {};
+  for (const snap of portfolio.snapshots) {
+    const year = snap.date ? snap.date.slice(0, 4) : null;
+    if (!year) continue;
+    if (!yearMap[year]) yearMap[year] = { startValue: snap.totalValue, endValue: snap.totalValue };
+    yearMap[year].endValue = snap.totalValue;
+  }
+  const yearlyReturns = Object.entries(yearMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([year, { startValue, endValue }]) => ({
+      year,
+      returnPct: startValue > 0 ? ((endValue - startValue) / startValue) * 100 : 0,
+      pnl: endValue - startValue,
+    }));
 
   const totalGroups = pnls.length;
   return {
@@ -265,6 +325,10 @@ export function calcMetrics(portfolio) {
     totalPnl,
     maxDrawdown,
     sharpe,
+    sortino,
+    calmar,
+    maxConsecLosers,
+    yearlyReturns,
   };
 }
 
