@@ -6,11 +6,11 @@ import {
 import {
   Plus, Trash2, Eye, EyeOff, RotateCcw, ChevronDown, ChevronUp,
   Layers, Database, Clock, Briefcase, FlaskConical, PlayCircle,
-  LineChart, History, FastForward,
+  LineChart, History, FastForward, Copy,
   Save, FolderOpen, Download, Upload, X,
 } from 'lucide-react';
 import {
-  bsmPrice, legPnlAtExpiry, legPnlAtTime, legGreeks,
+  bsmPrice, legPnlAtExpiry, legPnlAtTime, legGreeks, normalCDF,
 } from './lib/blackScholes.js';
 import { LEG_COLORS, CATEGORIES, CAT_COLORS, PRESETS } from './lib/presets.js';
 import { loadPortfolios, savePortfolios, deletePortfolio } from './lib/portfolio.js';
@@ -190,6 +190,57 @@ export default function App() {
     }, 0);
   }, [legsWithPremiums]);
 
+  /* ── Probability of Profit (log-normal BSM distribution) ─ */
+  const probabilityOfProfit = useMemo(() => {
+    if (!legsWithPremiums.length || !chartData.length) return null;
+    const avgIv = Math.max(
+      0.01,
+      legsWithPremiums.reduce((s, l) => s + Math.max(0, l.iv + ivShift / 100), 0) / legsWithPremiums.length,
+    );
+    const T = daysToExpiry / 365;
+    if (T <= 0) return null;
+
+    // P(S_T > K) using risk-neutral log-normal distribution
+    const probAbove = (K) => {
+      if (K <= 0) return 1;
+      const d2 =
+        (Math.log(underlyingPrice / K) +
+          (riskFreeRate - dividendYield - 0.5 * avgIv * avgIv) * T) /
+        (avgIv * Math.sqrt(T));
+      return normalCDF(d2);
+    };
+
+    const firstPt = chartData[0];
+    const lastPt = chartData[chartData.length - 1];
+
+    if (breakevens.length === 0) {
+      return firstPt.combined > 0 ? 100 : 0;
+    }
+
+    const sortedBEs = [...breakevens].sort((a, b) => a - b);
+    let pop = 0;
+
+    // Region below the lowest breakeven
+    if (firstPt.combined > 0) pop += 1 - probAbove(sortedBEs[0]);
+
+    // Regions between consecutive breakevens
+    for (let i = 0; i < sortedBEs.length - 1; i++) {
+      const mid = (sortedBEs[i] + sortedBEs[i + 1]) / 2;
+      const nearest = chartData.reduce((a, b) =>
+        Math.abs(b.price - mid) < Math.abs(a.price - mid) ? b : a,
+      );
+      if (nearest.combined > 0) {
+        pop += probAbove(sortedBEs[i]) - probAbove(sortedBEs[i + 1]);
+      }
+    }
+
+    // Region above the highest breakeven
+    if (lastPt.combined > 0) pop += probAbove(sortedBEs[sortedBEs.length - 1]);
+
+    return Math.max(0, Math.min(100, pop * 100));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legsWithPremiums, chartData, breakevens, underlyingPrice, riskFreeRate, dividendYield, ivShift, daysToExpiry]);
+
   /* ── Actions ──────────────────────────────────────────── */
   const loadPreset = useCallback(
     (name) => {
@@ -251,6 +302,16 @@ export default function App() {
 
   const toggleLeg = useCallback((id) => {
     setLegs((prev) => prev.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)));
+  }, []);
+
+  const duplicateLeg = useCallback((id) => {
+    setLegs((prev) => {
+      const idx = prev.findIndex((l) => l.id === id);
+      if (idx === -1) return prev;
+      const copy = { ...prev[idx], id: makeId() };
+      return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)];
+    });
+    setActivePreset(null);
   }, []);
 
   const resetAll = useCallback(() => {
@@ -705,8 +766,25 @@ export default function App() {
             {/* ── Payoff Chart ────────────────────────────── */}
             <div className="mt-5 bg-[#111827] rounded-lg border border-slate-800 p-4 pb-2">
               {chartData.length === 0 ? (
-                <div className="h-80 flex items-center justify-center text-slate-600 text-sm">
-                  Select a strategy or add legs to see the payoff diagram
+                <div className="h-80 flex flex-col items-center justify-center gap-4 text-center">
+                  <LineChart size={40} className="text-slate-700" strokeWidth={1.2} />
+                  <div>
+                    <div className="text-slate-400 text-sm font-medium">No strategy loaded</div>
+                    <div className="text-slate-600 text-xs mt-1">
+                      Pick a quick-start below, or click <span className="text-blue-400">+ Add Leg</span> to build your own
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-wrap justify-center">
+                    {['Long Call', 'Iron Condor', 'Bull Put Spread', 'Straddle'].map((name) => (
+                      <button
+                        key={name}
+                        onClick={() => loadPreset(name)}
+                        className="px-3 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-md text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors"
+                      >
+                        {PRESETS[name]?.icon} {name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={360}>
@@ -812,7 +890,7 @@ export default function App() {
 
             {/* ── Greeks + Key Metrics ─────────────────────── */}
             {legsWithPremiums.length > 0 && (
-              <div className="mt-3.5 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 fade-in">
+              <div className="mt-3.5 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 fade-in">
                 {[
                   { label: 'Net Delta', value: netGreeks.delta, sym: 'Δ', color: '#60a5fa' },
                   { label: 'Net Gamma', value: netGreeks.gamma, sym: 'Γ', color: '#a78bfa' },
@@ -821,12 +899,20 @@ export default function App() {
                   { label: 'Max Profit', value: pnlExtremes.maxProfit, sym: '↑', color: '#4ade80', pre: '$' },
                   { label: 'Max Loss', value: pnlExtremes.maxLoss, sym: '↓', color: '#f87171', pre: '$' },
                   { label: netCost >= 0 ? 'Net Credit' : 'Net Debit', value: Math.abs(netCost), sym: '$', color: netCost >= 0 ? '#4ade80' : '#f87171', pre: '$' },
-                ].map((c) => (
+                  probabilityOfProfit !== null && {
+                    label: 'Prob Profit',
+                    value: probabilityOfProfit,
+                    sym: '%',
+                    color: probabilityOfProfit >= 60 ? '#4ade80' : probabilityOfProfit >= 40 ? '#facc15' : '#f87171',
+                    suf: '%',
+                    d: 1,
+                  },
+                ].filter(Boolean).map((c) => (
                   <div key={c.label} className="bg-[#111827] rounded-md border border-slate-800 px-3 py-2.5">
                     <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{c.label}</div>
                     <div className="font-mono text-base font-semibold" style={{ color: c.color }}>
                       <span className="text-[11px] opacity-70 mr-0.5">{c.sym}</span>
-                      {c.pre || ''}{fmtNum(c.value)}{c.suf || ''}
+                      {c.pre || ''}{fmtNum(c.value, c.d ?? 2)}{c.suf || ''}
                     </div>
                   </div>
                 ))}
@@ -893,6 +979,8 @@ export default function App() {
                             { ...leg, iv: leg.iv + ivShift / 100 },
                             underlyingPrice, vt > 0 ? vt : lt, riskFreeRate, dividendYield
                           );
+                          const isAtm = Math.abs(leg.strike - underlyingPrice) / underlyingPrice < 0.005;
+                          const isItm = !isAtm && (leg.type === 'call' ? leg.strike < underlyingPrice : leg.strike > underlyingPrice);
                           return (
                             <tr key={leg.id} className="border-b border-slate-800/20 fade-in">
                               <td className="px-2.5 py-1.5">
@@ -919,11 +1007,22 @@ export default function App() {
                                 </select>
                               </td>
                               <td className="px-1.5 py-1.5">
-                                <input
-                                  type="number" value={leg.strike}
-                                  onChange={(e) => updateLeg(leg.id, 'strike', +e.target.value || 0)}
-                                  className="w-[70px] text-right" step="1"
-                                />
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number" value={leg.strike}
+                                    onChange={(e) => updateLeg(leg.id, 'strike', +e.target.value || 0)}
+                                    className="w-[70px] text-right" step="1"
+                                  />
+                                  <span className={`text-[9px] px-1 py-0.5 rounded font-medium leading-none ${
+                                    isAtm
+                                      ? 'text-blue-400 bg-blue-400/10'
+                                      : isItm
+                                        ? 'text-green-400 bg-green-400/10'
+                                        : 'text-slate-500 bg-slate-800'
+                                  }`}>
+                                    {isAtm ? 'ATM' : isItm ? 'ITM' : 'OTM'}
+                                  </span>
+                                </div>
                               </td>
                               <td className="px-1.5 py-1.5">
                                 <input
@@ -963,12 +1062,21 @@ export default function App() {
                                   <button
                                     onClick={() => toggleLeg(leg.id)}
                                     className="p-0.5 text-slate-500 hover:text-slate-300"
+                                    title="Show/hide on chart"
                                   >
                                     {leg.visible ? <Eye size={14} /> : <EyeOff size={14} />}
                                   </button>
                                   <button
+                                    onClick={() => duplicateLeg(leg.id)}
+                                    className="p-0.5 text-slate-500 hover:text-slate-300"
+                                    title="Duplicate leg"
+                                  >
+                                    <Copy size={14} />
+                                  </button>
+                                  <button
                                     onClick={() => removeLeg(leg.id)}
                                     className="p-0.5 text-red-500/70 hover:text-red-400"
+                                    title="Remove leg"
                                   >
                                     <Trash2 size={14} />
                                   </button>
