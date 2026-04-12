@@ -16,6 +16,7 @@ import {
 /**
  * Build legs for a strategy at a given spot price.
  * Returns array of { type, direction, strike, iv, quantity }.
+ * IVs here are relative anchors — skew is applied on top during entry.
  */
 const BACKTEST_STRATEGIES = {
   'Long Call (ATM)': (S) => [
@@ -66,17 +67,23 @@ export const STRATEGY_NAMES = Object.keys(BACKTEST_STRATEGIES);
  *
  * @param {Object} config
  * @param {string} config.strategy - One of STRATEGY_NAMES
- * @param {Array} config.priceData - Array of { date, open, high, low, close, volume }
+ * @param {Array}  config.priceData - Array of { date, open, high, low, close, volume }
  * @param {string} config.symbol
  * @param {number} [config.dte=30] - Days to expiry for each trade
  * @param {number} [config.entryInterval=30] - Days between new entries
- * @param {number} [config.iv=0.30] - Default implied volatility
+ * @param {number} [config.iv=0.30] - ATM implied volatility
  * @param {number} [config.riskFreeRate=0.05]
  * @param {number} [config.divYield=0]
  * @param {number} [config.startingCapital=10000]
  * @param {number} [config.commissionPerContract=0.65]
- * @param {number} [config.stopLossPct=0] - Stop loss as % of premium (0 = disabled)
- * @param {number} [config.takeProfitPct=0] - Take profit as % of premium (0 = disabled)
+ * @param {number} [config.stopLossPct=0] - Stop loss % of premium (0 = disabled)
+ * @param {number} [config.takeProfitPct=0] - Take profit % of premium (0 = disabled)
+ * @param {number} [config.trailingStopPct=0] - Trailing stop % drop from peak P&L (0 = disabled)
+ * @param {number} [config.managementDte=0] - Close when DTE remaining <= this value (0 = disabled)
+ * @param {number} [config.bidAskSpread=0] - Half bid-ask spread as fraction of option price (0 = no slippage)
+ * @param {string} [config.positionSizing='fixed'] - 'fixed' (1 contract) or 'fractional' (size by riskPct)
+ * @param {number} [config.riskPct=2] - % of current capital to risk per trade (for 'fractional' sizing)
+ * @param {number} [config.skewSlope=0] - Vol skew slope (e.g. -0.5 = typical equity skew; 0 = flat)
  * @param {Object} [config.existingPortfolio] - Append to this portfolio instead of creating a new one
  * @returns {{ portfolio: Object, metrics: Object, equityCurve: Array }}
  */
@@ -93,6 +100,12 @@ export function runBacktest({
   commissionPerContract = 0.65,
   stopLossPct = 0,
   takeProfitPct = 0,
+  trailingStopPct = 0,
+  managementDte = 0,
+  bidAskSpread = 0,
+  positionSizing = 'fixed',
+  riskPct = 2,
+  skewSlope = 0,
   existingPortfolio,
 }) {
   const strategyFn = BACKTEST_STRATEGIES[strategy];
@@ -108,28 +121,44 @@ export function runBacktest({
     portfolio.config.commissionPerContract = commissionPerContract;
   }
 
-  let daysSinceEntry = entryInterval; // Enter on first day
+  // daysSinceEntry starts at entryInterval so a signal fires on bar 0,
+  // but execution is deferred to bar 1 (look-ahead fix).
+  let daysSinceEntry = entryInterval;
+  let pendingEntry = null; // { legs, expDate, gid, signalSpot }
 
   for (let i = 0; i < priceData.length; i++) {
     const bar = priceData[i];
-    const spot = bar.close;
     const date = bar.date;
+    // Use today's open for execution (next-bar fill); fall back to close if open missing.
+    const executionSpot = bar.open ?? bar.close;
+    const spot = bar.close;
 
-    // Check for expirations and stop/take-profit on open trades
-    portfolio = processOpenTrades(portfolio, spot, date, riskFreeRate, divYield, stopLossPct, takeProfitPct);
+    // ── Execute deferred entry from previous bar's signal ──────────────────
+    if (pendingEntry) {
+      const { legs: pendingLegs, expDate, gid } = pendingEntry;
 
-    // Enter new position?
-    daysSinceEntry++;
-    if (daysSinceEntry >= entryInterval) {
-      const legs = strategyFn(spot);
-      const expDate = addDays(date, dte);
-      const gid = makeGroupId();
+      // Determine quantity based on position sizing
+      const currentCapital =
+        portfolio.snapshots.length > 0
+          ? portfolio.snapshots[portfolio.snapshots.length - 1].totalValue
+          : startingCapital;
+      const qty = calcEntryQuantity(
+        pendingLegs, executionSpot, dte, riskFreeRate, divYield,
+        positionSizing, riskPct, currentCapital,
+      );
 
-      for (const leg of legs) {
-        const legIv = leg.iv || iv;
+      for (const leg of pendingLegs) {
+        const legIv = applySkew(leg.iv || iv, leg.strike, executionSpot, skewSlope);
         const t = dte / 365;
-        const prices = bsmPrice(spot, leg.strike, t, riskFreeRate, legIv, divYield);
-        const premium = leg.type === 'call' ? prices.call : prices.put;
+        const prices = bsmPrice(executionSpot, leg.strike, t, riskFreeRate, legIv, divYield);
+        const midPrice = leg.type === 'call' ? prices.call : prices.put;
+
+        // Apply bid-ask spread: longs buy at ask, shorts sell at bid
+        const dir = leg.direction === 'long' ? 1 : -1;
+        const slipFactor = bidAskSpread > 0
+          ? (dir > 0 ? 1 + bidAskSpread / 2 : 1 - bidAskSpread / 2)
+          : 1;
+        const premium = midPrice * slipFactor;
 
         const trade = createTrade({
           symbol,
@@ -137,9 +166,9 @@ export function runBacktest({
           direction: leg.direction,
           strike: leg.strike,
           premium: Math.round(premium * 100) / 100,
-          quantity: leg.quantity,
+          quantity: qty,
           iv: legIv,
-          underlyingPrice: spot,
+          underlyingPrice: executionSpot,
           expiration: expDate,
           groupId: gid,
           openedAt: date,
@@ -147,10 +176,30 @@ export function runBacktest({
         trade._commission = commissionPerContract;
         portfolio = addTrade(portfolio, trade);
       }
+      pendingEntry = null;
       daysSinceEntry = 0;
     }
 
-    // Take daily snapshot
+    // ── Process open trades: expirations, exits, stop/take-profit ──────────
+    portfolio = processOpenTrades(
+      portfolio, spot, date, riskFreeRate, divYield,
+      stopLossPct, takeProfitPct, trailingStopPct, managementDte, bidAskSpread,
+    );
+
+    // ── Check entry condition — signal uses today's close (no look-ahead) ──
+    daysSinceEntry++;
+    if (daysSinceEntry >= entryInterval) {
+      const legs = strategyFn(spot); // strikes decided at today's close
+      pendingEntry = {
+        legs,
+        expDate: addDays(date, dte),
+        gid: makeGroupId(),
+        signalSpot: spot,
+      };
+      // daysSinceEntry reset happens when entry is executed on the next bar
+    }
+
+    // ── Daily snapshot ─────────────────────────────────────────────────────
     portfolio = takeSnapshot(portfolio, spot, date, riskFreeRate, divYield);
   }
 
@@ -171,8 +220,8 @@ export function runBacktest({
  * then simulate forward through price data to see the outcome.
  *
  * @param {Object} config
- * @param {Array} config.legs - Array of { type, direction, strike, iv, quantity, premium?, dte? }
- * @param {Array} config.priceData - Array of { date, close, ... } (full history)
+ * @param {Array}  config.legs - Array of { type, direction, strike, iv, quantity, premium?, dte? }
+ * @param {Array}  config.priceData - Array of { date, close, ... } (full history)
  * @param {string} config.symbol
  * @param {string} config.entryDate - ISO date string to enter the trade
  * @param {string} [config.exitDate] - ISO date string to exit (or hold to expiry)
@@ -308,37 +357,123 @@ function addDays(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
-function processOpenTrades(portfolio, spot, date, r, q, stopLossPct, takeProfitPct) {
+/**
+ * Apply a simple linear vol skew to an option's IV based on moneyness.
+ * skewSlope < 0 (e.g. -0.5) replicates typical equity skew:
+ *   OTM puts (strike < spot) get higher IV; OTM calls get lower IV.
+ */
+function applySkew(baseIv, strike, spot, skewSlope) {
+  if (!skewSlope || spot <= 0) return baseIv;
+  const moneyness = strike / spot - 1; // negative for OTM put, positive for OTM call
+  return Math.max(0.05, baseIv * (1 + skewSlope * moneyness));
+}
+
+/**
+ * Calculate entry quantity for position sizing.
+ * 'fixed'      → always 1 contract per leg.
+ * 'fractional' → size so net debit ≈ riskPct% of current capital.
+ *                Credit strategies default to 1 contract (max loss unknown without spread width).
+ */
+function calcEntryQuantity(legs, spot, dte, r, q, positionSizing, riskPct, capital) {
+  if (positionSizing !== 'fractional') return 1;
+
+  // Net debit/credit per 1 contract unit
+  let netCost = 0;
+  for (const leg of legs) {
+    const t = dte / 365;
+    const prices = bsmPrice(spot, leg.strike, t, r, leg.iv, q);
+    const mid = leg.type === 'call' ? prices.call : prices.put;
+    netCost += (leg.direction === 'long' ? 1 : -1) * mid * 100;
+  }
+
+  if (netCost > 0) {
+    // Debit strategy: target risk = net premium paid
+    const targetRisk = capital * (riskPct / 100);
+    return Math.max(1, Math.floor(targetRisk / netCost));
+  }
+  // Credit strategy: fall back to 1 contract
+  return 1;
+}
+
+/**
+ * Process all open trades for the current bar:
+ * - Expire trades that have reached their expiry date.
+ * - Apply management DTE close.
+ * - Apply stop-loss, take-profit, and trailing stop.
+ * Bid-ask spread slippage is applied to all exit prices.
+ */
+function processOpenTrades(
+  portfolio, spot, date, r, q,
+  stopLossPct, takeProfitPct, trailingStopPct, managementDte, bidAskSpread,
+) {
+  // First pass: update the peak P&L tracker for trailing stops (immutable update)
   let updated = portfolio;
+  if (trailingStopPct > 0) {
+    const newTrades = portfolio.trades.map((trade) => {
+      if (trade.status !== 'open' || date >= trade.expiration) return trade;
+      const expDate = new Date(trade.expiration);
+      const now = new Date(date);
+      const daysLeft = Math.max(0, (expDate - now) / (1000 * 60 * 60 * 24));
+      const t = daysLeft / 365;
+      const prices = bsmPrice(spot, trade.strike, t, r, trade.iv, q);
+      const mid = trade.type === 'call' ? prices.call : prices.put;
+      const dir = trade.direction === 'long' ? 1 : -1;
+      const pnlPct = trade.premium > 0 ? dir * (mid - trade.premium) / trade.premium : 0;
+      const newPeak = Math.max(trade._maxPnlPct ?? -Infinity, pnlPct);
+      return newPeak !== trade._maxPnlPct ? { ...trade, _maxPnlPct: newPeak } : trade;
+    });
+    updated = { ...portfolio, trades: newTrades };
+  }
+
+  // Second pass: evaluate exit conditions
   for (const trade of updated.trades) {
     if (trade.status !== 'open') continue;
 
-    // Check expiration
+    // Expiration
     if (date >= trade.expiration) {
       updated = expireTrade(updated, trade.id, spot);
       continue;
     }
 
-    // Calculate current theoretical value
     const expDate = new Date(trade.expiration);
     const now = new Date(date);
     const daysLeft = Math.max(0, (expDate - now) / (1000 * 60 * 60 * 24));
     const t = daysLeft / 365;
     const prices = bsmPrice(spot, trade.strike, t, r, trade.iv, q);
-    const currentPrice = trade.type === 'call' ? prices.call : prices.put;
-
+    const mid = trade.type === 'call' ? prices.call : prices.put;
     const dir = trade.direction === 'long' ? 1 : -1;
-    const pnlPct = trade.premium > 0 ? dir * (currentPrice - trade.premium) / trade.premium : 0;
+    const pnlPct = trade.premium > 0 ? dir * (mid - trade.premium) / trade.premium : 0;
+
+    // Exit price after bid-ask slippage (long sells at bid, short buys at ask)
+    const exitSlip = bidAskSpread > 0
+      ? (dir > 0 ? 1 - bidAskSpread / 2 : 1 + bidAskSpread / 2)
+      : 1;
+    const exitPrice = Math.max(0, mid * exitSlip);
+
+    // Management DTE: close when time remaining hits threshold
+    if (managementDte > 0 && daysLeft <= managementDte) {
+      updated = closeTrade(updated, trade.id, exitPrice, date);
+      continue;
+    }
 
     // Stop loss
     if (stopLossPct > 0 && pnlPct <= -(stopLossPct / 100)) {
-      updated = closeTrade(updated, trade.id, currentPrice, date);
+      updated = closeTrade(updated, trade.id, exitPrice, date);
       continue;
     }
 
     // Take profit
     if (takeProfitPct > 0 && pnlPct >= takeProfitPct / 100) {
-      updated = closeTrade(updated, trade.id, currentPrice, date);
+      updated = closeTrade(updated, trade.id, exitPrice, date);
+      continue;
+    }
+
+    // Trailing stop: close if P&L has dropped by trailingStopPct from its peak
+    if (trailingStopPct > 0 && (trade._maxPnlPct ?? -Infinity) > 0) {
+      const dropFromPeak = (trade._maxPnlPct ?? 0) - pnlPct;
+      if (dropFromPeak >= trailingStopPct / 100) {
+        updated = closeTrade(updated, trade.id, exitPrice, date);
+      }
     }
   }
   return updated;

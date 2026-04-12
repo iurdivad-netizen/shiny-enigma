@@ -1,9 +1,9 @@
 import { useState, useCallback, useMemo } from 'react';
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine,
+  Tooltip, ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts';
-import { Play, Loader, AlertTriangle, MousePointerClick, Zap, Plus, Trash2 } from 'lucide-react';
+import { Play, Loader, AlertTriangle, MousePointerClick, Zap, Plus, Trash2, Download } from 'lucide-react';
 import { STRATEGY_NAMES, runBacktest, runManualBacktest } from '../lib/backtestEngine.js';
 import { fetchDailyHistory, getStoredAvKey } from '../lib/alphaVantageApi.js';
 import { bsmPrice } from '../lib/blackScholes.js';
@@ -61,6 +61,7 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
   const [capital, setCapital] = useState(10000);
   const [commission, setCommission] = useState(0.65);
   const [riskFreeRate, setRiskFreeRate] = useState(5);
+  const [divYield, setDivYield] = useState(0);
   const [targetPortfolioId, setTargetPortfolioId] = useState(''); // '' = new portfolio
 
   // Historical data
@@ -252,7 +253,7 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
         exitDate: exitDate || undefined,
         dte,
         riskFreeRate: riskFreeRate / 100,
-        divYield: 0,
+        divYield: divYield / 100,
         startingCapital: capital,
         commissionPerContract: commission,
         existingPortfolio,
@@ -269,7 +270,7 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
     } finally {
       setLoading(false);
     }
-  }, [legs, legsWithEntryPremiums, priceData, symbol, entryDate, exitDate, dte, riskFreeRate, capital, commission, onResult, onUpdate, targetPortfolioId, backtestPortfolios]);
+  }, [legs, legsWithEntryPremiums, priceData, symbol, entryDate, exitDate, dte, riskFreeRate, divYield, capital, commission, onResult, onUpdate, targetPortfolioId, backtestPortfolios]);
 
   // Thin data for chart
   const chartData = useMemo(() => {
@@ -344,6 +345,10 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
         <label className="flex flex-col gap-0.5">
           <span className="text-slate-500">Rate %</span>
           <input type="number" value={riskFreeRate} onChange={(e) => setRiskFreeRate(+e.target.value || 0)} className="px-2 py-1 rounded w-16" step="0.5" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-500">Div Yield %</span>
+          <input type="number" value={divYield} onChange={(e) => setDivYield(+e.target.value || 0)} className="px-2 py-1 rounded w-16" step="0.1" min="0" />
         </label>
       </div>
 
@@ -559,7 +564,14 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
   const [commission, setCommission] = useState(0.65);
   const [stopLoss, setStopLoss] = useState(0);
   const [takeProfit, setTakeProfit] = useState(0);
+  const [trailingStop, setTrailingStop] = useState(0);
+  const [managementDte, setManagementDte] = useState(0);
   const [riskFreeRate, setRiskFreeRate] = useState(5);
+  const [divYield, setDivYield] = useState(0);
+  const [bidAskSpread, setBidAskSpread] = useState(0);
+  const [positionSizing, setPositionSizing] = useState('fixed');
+  const [riskPct, setRiskPct] = useState(2);
+  const [useSkew, setUseSkew] = useState(false);
   const [useShared, setUseShared] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -597,11 +609,17 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
         entryInterval,
         iv: iv / 100,
         riskFreeRate: riskFreeRate / 100,
-        divYield: 0,
+        divYield: divYield / 100,
         startingCapital: capital,
         commissionPerContract: commission,
         stopLossPct: stopLoss,
         takeProfitPct: takeProfit,
+        trailingStopPct: trailingStop,
+        managementDte,
+        bidAskSpread: bidAskSpread / 100,
+        positionSizing,
+        riskPct,
+        skewSlope: useSkew ? -0.5 : 0,
         existingPortfolio,
       });
 
@@ -616,7 +634,7 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
     } finally {
       setLoading(false);
     }
-  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, riskFreeRate, onResult, onUpdate, useShared, sharedPriceData, targetPortfolioId, backtestPortfolios]);
+  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, trailingStop, managementDte, riskFreeRate, divYield, bidAskSpread, positionSizing, riskPct, useSkew, onResult, onUpdate, useShared, sharedPriceData, targetPortfolioId, backtestPortfolios]);
 
   return (
     <div className="space-y-3">
@@ -641,6 +659,7 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
         </label>
       )}
 
+      {/* Core parameters */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
         <label className="flex flex-col gap-0.5">
           <span className="text-slate-500">Symbol</span>
@@ -671,7 +690,7 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
           <input type="number" value={entryInterval} onChange={(e) => setEntryInterval(+e.target.value || 30)} className="px-2 py-1 rounded" min="1" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">IV %</span>
+          <span className="text-slate-500">ATM IV %</span>
           <input type="number" value={iv} onChange={(e) => setIv(+e.target.value || 30)} className="px-2 py-1 rounded" min="1" max="200" />
         </label>
         <label className="flex flex-col gap-0.5">
@@ -687,13 +706,66 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
           <input type="number" value={riskFreeRate} onChange={(e) => setRiskFreeRate(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" step="0.5" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Stop Loss % (0 = off)</span>
-          <input type="number" value={stopLoss} onChange={(e) => setStopLoss(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" />
+          <span className="text-slate-500">Div Yield %</span>
+          <input type="number" value={divYield} onChange={(e) => setDivYield(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" step="0.1" />
         </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Take Profit % (0 = off)</span>
-          <input type="number" value={takeProfit} onChange={(e) => setTakeProfit(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" />
-        </label>
+      </div>
+
+      {/* Exit rules */}
+      <div>
+        <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1.5">Exit Rules</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <label className="flex flex-col gap-0.5">
+            <span className="text-slate-500">Stop Loss % (0=off)</span>
+            <input type="number" value={stopLoss} onChange={(e) => setStopLoss(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-slate-500">Take Profit % (0=off)</span>
+            <input type="number" value={takeProfit} onChange={(e) => setTakeProfit(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-slate-500">Trailing Stop % (0=off)</span>
+            <input type="number" value={trailingStop} onChange={(e) => setTrailingStop(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" title="Close when P&L drops this % from its peak" />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-slate-500">Manage at DTE (0=off)</span>
+            <input type="number" value={managementDte} onChange={(e) => setManagementDte(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" title="Close when days-to-expiry reaches this value" />
+          </label>
+        </div>
+      </div>
+
+      {/* Advanced parameters */}
+      <div>
+        <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1.5">Advanced</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <label className="flex flex-col gap-0.5">
+            <span className="text-slate-500">Bid-Ask Spread % (0=off)</span>
+            <input type="number" value={bidAskSpread} onChange={(e) => setBidAskSpread(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" max="50" step="0.5" title="Half-spread applied at each fill as % of option price" />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-slate-500">Position Sizing</span>
+            <select value={positionSizing} onChange={(e) => setPositionSizing(e.target.value)}
+              className="px-2 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700">
+              <option value="fixed">Fixed (1 contract)</option>
+              <option value="fractional">Fractional (% of capital)</option>
+            </select>
+          </label>
+          {positionSizing === 'fractional' && (
+            <label className="flex flex-col gap-0.5">
+              <span className="text-slate-500">Risk per Trade %</span>
+              <input type="number" value={riskPct} onChange={(e) => setRiskPct(+e.target.value || 1)} className="px-2 py-1 rounded" min="0.1" max="100" step="0.5" title="% of current capital allocated per debit trade" />
+            </label>
+          )}
+          <label className="flex items-center gap-1.5 cursor-pointer pt-4">
+            <input type="checkbox" checked={useSkew} onChange={(e) => setUseSkew(e.target.checked)} className="accent-purple-500" />
+            <span className={useSkew ? 'text-purple-300' : 'text-slate-500'}>Equity vol skew</span>
+          </label>
+        </div>
+        {useSkew && (
+          <div className="text-[10px] text-slate-500 mt-1">
+            Applies a slope of −0.5 to IV: OTM puts priced richer, OTM calls cheaper (realistic equity skew).
+          </div>
+        )}
       </div>
 
       {/* Portfolio target selector */}
@@ -739,23 +811,71 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
    ══════════════════════════════════════════════════════════ */
 
 function BacktestResultCard({ result }) {
-  const { metrics, equityCurve } = result;
+  const { metrics, equityCurve, portfolio } = result;
   const firstSnap = equityCurve[0];
   const lastSnap = equityCurve[equityCurve.length - 1];
-  const returnPct = firstSnap ? ((lastSnap.totalValue - firstSnap.totalValue) / firstSnap.totalValue * 100) : 0;
+  const returnPct = firstSnap && firstSnap.totalValue > 0
+    ? ((lastSnap.totalValue - firstSnap.totalValue) / firstSnap.totalValue * 100)
+    : 0;
 
-  // Thin equity curve for chart
+  // Thin equity curve for chart, enriched with buy-and-hold benchmark
   const step = Math.max(1, Math.floor(equityCurve.length / 150));
-  const chartSnaps = equityCurve.filter((_, i) => i % step === 0 || i === equityCurve.length - 1);
+  const rawSnaps = equityCurve.filter((_, i) => i % step === 0 || i === equityCurve.length - 1);
+  const startCapital = portfolio?.config?.startingCapital ?? firstSnap?.totalValue ?? 10000;
+  const firstSpot = firstSnap?.spotPrice ?? 1;
+  const chartSnaps = rawSnaps.map((s) => ({
+    ...s,
+    benchmarkValue: firstSpot > 0 ? Math.round(startCapital * (s.spotPrice / firstSpot) * 100) / 100 : startCapital,
+  }));
+
+  // CSV export of closed trade log
+  const exportCsv = useCallback(() => {
+    if (!portfolio?.trades) return;
+    const closed = portfolio.trades.filter((t) => t.status !== 'open');
+    const header = 'GroupID,Symbol,Type,Direction,Strike,IV%,OpenDate,CloseDate,Status,EntryPremium,ExitPrice,Qty,PnL';
+    const rows = closed.map((t) => {
+      const dir = t.direction === 'long' ? 1 : -1;
+      const comm = t.quantity * (t._commission ?? 0.65);
+      const pnl = dir * ((t.closePrice ?? t.premium) - t.premium) * t.quantity * 100 - comm * 2;
+      return [
+        t.groupId, t.symbol, t.type, t.direction,
+        t.strike, (t.iv * 100).toFixed(0),
+        t.openedAt?.slice(0, 10), t.closedAt?.slice(0, 10),
+        t.status, t.premium.toFixed(2),
+        (t.closePrice ?? t.premium).toFixed(2),
+        t.quantity, pnl.toFixed(2),
+      ].join(',');
+    });
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backtest_trades_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [portfolio]);
 
   return (
     <div className="bg-slate-800/50 rounded-lg p-3 space-y-3">
-      <div className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-        Results
-        <span className="text-[10px] text-slate-500">
-          ({equityCurve.length} days, {firstSnap?.date} → {lastSnap?.date})
-        </span>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+          Results
+          <span className="text-[10px] text-slate-500">
+            ({equityCurve.length} days, {firstSnap?.date} → {lastSnap?.date})
+          </span>
+        </div>
+        <button
+          onClick={exportCsv}
+          className="flex items-center gap-1 px-2 py-0.5 text-[10px] bg-slate-700 hover:bg-slate-600 rounded text-slate-300"
+          title="Download trade log as CSV"
+        >
+          <Download size={10} /> CSV
+        </button>
       </div>
+
+      {/* Core metrics grid */}
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-xs">
         <Stat label="Total P&L" value={fmtMoney(metrics.totalPnl)} positive={metrics.totalPnl >= 0} />
         <Stat label="Return" value={`${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%`} positive={returnPct >= 0} />
@@ -763,15 +883,19 @@ function BacktestResultCard({ result }) {
         <Stat label="Profit Factor" value={metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)} />
         <Stat label="Max DD" value={`${(metrics.maxDrawdown * 100).toFixed(1)}%`} positive={false} />
         <Stat label="Sharpe" value={metrics.sharpe.toFixed(2)} />
+        <Stat label="Sortino" value={metrics.sortino.toFixed(2)} />
+        <Stat label="Calmar" value={isFinite(metrics.calmar) ? metrics.calmar.toFixed(2) : '—'} />
         <Stat label="Trades" value={metrics.totalTrades} />
         <Stat label="Winners" value={metrics.winners} positive={true} />
         <Stat label="Losers" value={metrics.losers} positive={false} />
+        <Stat label="Max Consec L" value={metrics.maxConsecLosers} positive={false} />
         <Stat label="Avg Win" value={fmtMoney(metrics.avgWin)} positive={true} />
+        <Stat label="Avg Loss" value={fmtMoney(metrics.avgLoss)} positive={false} />
       </div>
 
-      {/* Inline equity curve */}
+      {/* Equity curve with buy-and-hold benchmark overlay */}
       {chartSnaps.length > 2 && (
-        <div className="h-28">
+        <div className="h-36">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartSnaps}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -779,11 +903,44 @@ function BacktestResultCard({ result }) {
               <YAxis tick={{ fontSize: 9, fill: '#64748b' }} domain={['auto', 'auto']} />
               <Tooltip
                 contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 10 }}
-                formatter={(v) => [`$${Number(v).toFixed(0)}`, 'Value']}
+                formatter={(v, name) => [`$${Number(v).toFixed(0)}`, name === 'totalValue' ? 'Strategy' : 'Buy & Hold']}
               />
-              <Area type="monotone" dataKey="totalValue" stroke="#60a5fa" fill="#60a5fa" fillOpacity={0.1} strokeWidth={1.5} />
+              <Legend wrapperStyle={{ fontSize: 9, paddingTop: 2 }} />
+              <Area type="monotone" dataKey="totalValue" name="Strategy" stroke="#60a5fa" fill="#60a5fa" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
+              <Line type="monotone" dataKey="benchmarkValue" name="Buy & Hold" stroke="#f59e0b" strokeWidth={1} dot={false} strokeDasharray="4 3" />
             </ComposedChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Per-year breakdown */}
+      {metrics.yearlyReturns && metrics.yearlyReturns.length > 1 && (
+        <div>
+          <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1">Year-by-Year</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 text-left">
+                  <th className="px-1.5 py-0.5">Year</th>
+                  <th className="px-1.5 py-0.5 text-right">Return</th>
+                  <th className="px-1.5 py-0.5 text-right">P&L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.yearlyReturns.map(({ year, returnPct: rp, pnl }) => (
+                  <tr key={year} className="border-t border-slate-800/50">
+                    <td className="px-1.5 py-0.5 text-slate-400">{year}</td>
+                    <td className={`px-1.5 py-0.5 text-right font-mono font-semibold ${rp >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {rp >= 0 ? '+' : ''}{rp.toFixed(1)}%
+                    </td>
+                    <td className={`px-1.5 py-0.5 text-right font-mono ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {fmtMoney(pnl)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
