@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
   Plus, Trash2, Eye, EyeOff, RotateCcw, ChevronDown, ChevronUp,
-  Layers, Database, Clock, Briefcase, FlaskConical, PlayCircle,
+  Layers, Clock, Briefcase, FlaskConical, PlayCircle,
   LineChart, History, FastForward, Copy,
   Save, FolderOpen, Download, Upload, X,
 } from 'lucide-react';
@@ -18,7 +18,6 @@ import {
   captureSession, saveSession, loadSavedSessions, deleteSavedSession,
   exportToFile, parseImportFile,
 } from './lib/sessionStore.js';
-import OptionsChain from './components/OptionsChain.jsx';
 import HistoricalData from './components/HistoricalData.jsx';
 import PortfolioTracker from './components/PortfolioTracker.jsx';
 import BacktestPanel from './components/BacktestPanel.jsx';
@@ -40,7 +39,6 @@ export default function App() {
   const [showLegLines, setShowLegLines] = useState(true);
   const [activePreset, setActivePreset] = useState(null);
   const [expandPresets, setExpandPresets] = useState(true);
-  const [expandChain, setExpandChain] = useState(true);
   const [expandHistory, setExpandHistory] = useState(false);
   const [filterCat, setFilterCat] = useState(null);
   const [tickerLabel, setTickerLabel] = useState('');
@@ -457,16 +455,6 @@ export default function App() {
     e.target.value = '';
   }, [restoreSession, setPortfolios]);
 
-  /** Callback from OptionsChain when a quote is loaded. */
-  const handleQuoteLoaded = useCallback((q) => {
-    setUnderlyingPrice(q.last);
-    setTickerLabel(`${q.symbol} — ${q.description}`);
-  }, []);
-
-  const handleDteLoaded = useCallback((dte) => {
-    setDaysToExpiry(dte);
-  }, []);
-
   /** Callback from HistoricalData when a date is clicked on the chart. */
   const handleHistoricalQuote = useCallback((q) => {
     setUnderlyingPrice(q.close);
@@ -727,27 +715,8 @@ export default function App() {
         {/* ══ SIMULATION TAB ══════════════════════════════════ */}
         {activeTab === 'simulation' && (
           <div className="fade-in">
-            {/* ── Market Data / Options Chain ──────────────── */}
-            <div>
-              <button
-                onClick={() => setExpandChain(!expandChain)}
-                className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
-              >
-                <Database size={13} />
-                Live Options Chain
-                {expandChain ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              {expandChain && (
-                <OptionsChain
-                  onAddLeg={addLegFromChain}
-                  onQuoteLoaded={handleQuoteLoaded}
-                  onDteLoaded={handleDteLoaded}
-                />
-              )}
-            </div>
-
             {/* ── Historical Data ─────────────────────────── */}
-            <div>
+            <div className="mt-4">
               <button
                 onClick={() => setExpandHistory(!expandHistory)}
                 className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
@@ -1143,9 +1112,6 @@ export default function App() {
                                 <span className={`font-mono text-xs ${leg.premiumOverride ? 'text-slate-200' : 'text-slate-500'}`}>
                                   ${leg.premium.toFixed(2)}
                                 </span>
-                                {leg.source === 'tradier' && (
-                                  <span className="ml-1 text-[9px] text-blue-400/60">MKT</span>
-                                )}
                               </td>
                               <td className="px-2 py-1.5 font-mono text-[11px] text-blue-400">{fmtNum(g.delta)}</td>
                               <td className="px-2 py-1.5 font-mono text-[11px] text-purple-400">{fmtNum(g.gamma, 4)}</td>
@@ -1271,7 +1237,7 @@ export default function App() {
         {/* ── Footer ──────────────────────────────────────── */}
         <footer className="mt-6 pt-3 border-t border-slate-800 text-[11px] text-slate-600 flex flex-wrap justify-between gap-2">
           <span>Black-Scholes-Merton · European options · No transaction costs</span>
-          <span>Tradier Sandbox · Alpha Vantage · 15-min delayed data</span>
+          <span>Alpha Vantage · Historical data</span>
         </footer>
       </div>
     </div>

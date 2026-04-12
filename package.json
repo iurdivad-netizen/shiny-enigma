@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Browser-based options trading simulator with Black-Scholes pricing, multi-leg strategy builder, and optional Tradier API integration",
+  "description": "Browser-based options trading simulator with Black-Scholes pricing and multi-leg strategy builder",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
