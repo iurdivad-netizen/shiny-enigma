@@ -36,7 +36,82 @@ export function normalCDF(x) {
   return 0.5 * (1.0 + sign * y);
 }
 
-/* ── BSM pricing ─────────────────────────────────────────── */
+/* ── Inverse normal CDF ──────────────────────────────────── */
+
+/**
+ * Rational approximation for the inverse normal CDF (Peter Acklam's algorithm).
+ * Max absolute error ≈ 1.15 × 10⁻⁹ over the full domain.
+ */
+export function normalQuantile(p) {
+  if (p <= 0) return -Infinity;
+  if (p >= 1) return Infinity;
+
+  const a = [
+    -3.969683028665376e+01,  2.209460984245205e+02,
+    -2.759285104469687e+02,  1.383577518672690e+02,
+    -3.066479806614716e+01,  2.506628277459239e+00,
+  ];
+  const b = [
+    -5.447609879822406e+01,  1.615858368580409e+02,
+    -1.556989798598866e+02,  6.680131188771972e+01,
+    -1.328068155288572e+01,
+  ];
+  const c = [
+    -7.784894002430293e-03, -3.223964580411365e-01,
+    -2.400758277161838e+00, -2.549732539343734e+00,
+     4.374664141464968e+00,  2.938163982698783e+00,
+  ];
+  const d = [
+     7.784695709041462e-03,  3.224671290700398e-01,
+     2.445134137142996e+00,  3.754408661907416e+00,
+  ];
+
+  const pLow = 0.02425;
+  let q, r;
+
+  if (p < pLow) {
+    q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+           ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  } else if (p <= 1 - pLow) {
+    q = p - 0.5;
+    r = q * q;
+    return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+           (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+  } else {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+             ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+}
+
+/**
+ * Analytically compute the strike that produces a given unsigned delta.
+ *
+ * For calls:  Δ = e^{−qt} · N(d₁)   →  d₁ = N⁻¹(Δ / e^{−qt})
+ * For puts:   Δ = e^{−qt} · N(d₁−1) →  d₁ = N⁻¹(1 − Δ / e^{−qt})
+ * Then:       K = S · exp(−(d₁·σ√t − (r−q+σ²/2)·t))
+ *
+ * @param {number} S         - Spot price
+ * @param {number} absDelta  - Unsigned target delta, e.g. 0.30 for the 30-delta option
+ * @param {number} t         - Time to expiry in years
+ * @param {number} r         - Risk-free rate
+ * @param {number} sigma     - ATM implied volatility
+ * @param {number} q         - Continuous dividend yield
+ * @param {'call'|'put'} type
+ * @returns {number} strike price
+ */
+export function strikeFromDelta(S, absDelta, t, r, sigma, q, type) {
+  if (t <= 0 || sigma <= 0 || absDelta <= 0 || absDelta >= 1) return S;
+  const eqt = Math.exp(-q * t);
+  // N(d1) target differs for calls vs puts
+  const nd1 = type === 'call'
+    ? Math.min(1 - 1e-9, absDelta / eqt)
+    : Math.max(1e-9, 1 - absDelta / eqt);
+  const d1 = normalQuantile(nd1);
+  const drift = (r - q + 0.5 * sigma * sigma) * t;
+  return S * Math.exp(-(d1 * sigma * Math.sqrt(t) - drift));
+}
 
 export function bsmPrice(S, K, t, r, sigma, q = 0) {
   if (t <= 0 || sigma <= 0) {

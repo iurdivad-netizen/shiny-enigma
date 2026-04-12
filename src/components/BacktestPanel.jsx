@@ -571,6 +571,8 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
   const [bidAskSpread, setBidAskSpread] = useState(0);
   const [positionSizing, setPositionSizing] = useState('fixed');
   const [riskPct, setRiskPct] = useState(2);
+  const [strikeMode, setStrikeMode] = useState('pct');
+  const [strikeIncrement, setStrikeIncrement] = useState(1);
   const [useSkew, setUseSkew] = useState(false);
   const [useShared, setUseShared] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -620,6 +622,8 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
         positionSizing,
         riskPct,
         skewSlope: useSkew ? -0.5 : 0,
+        strikeMode,
+        strikeIncrement: strikeIncrement > 0 ? strikeIncrement : 0,
         existingPortfolio,
       });
 
@@ -634,7 +638,7 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
     } finally {
       setLoading(false);
     }
-  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, trailingStop, managementDte, riskFreeRate, divYield, bidAskSpread, positionSizing, riskPct, useSkew, onResult, onUpdate, useShared, sharedPriceData, targetPortfolioId, backtestPortfolios]);
+  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, trailingStop, managementDte, riskFreeRate, divYield, bidAskSpread, positionSizing, riskPct, strikeMode, strikeIncrement, useSkew, onResult, onUpdate, useShared, sharedPriceData, targetPortfolioId, backtestPortfolios]);
 
   return (
     <div className="space-y-3">
@@ -738,10 +742,31 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
       <div>
         <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1.5">Advanced</div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+
+          {/* Strike targeting */}
+          <label className="flex flex-col gap-0.5">
+            <span className="text-slate-500" title="How each leg's strike is determined">Strike Mode</span>
+            <select value={strikeMode} onChange={(e) => setStrikeMode(e.target.value)}
+              className="px-2 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700">
+              <option value="pct">% of Spot (fixed)</option>
+              <option value="sigma">Std-Dev (σ move)</option>
+              <option value="delta">Target Delta</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-slate-500" title="Snap strikes to the nearest multiple (e.g. 1 for $1, 5 for $5). 0 = nearest integer.">Strike Increment $</span>
+            <input type="number" value={strikeIncrement} onChange={(e) => setStrikeIncrement(+e.target.value || 0)}
+              className="px-2 py-1 rounded" min="0" step="0.5"
+              title="Common: 1 for SPY/QQQ, 5 for SPX/RUT, 2.5 near ATM for high-price stocks" />
+          </label>
+
+          {/* Slippage */}
           <label className="flex flex-col gap-0.5">
             <span className="text-slate-500">Bid-Ask Spread % (0=off)</span>
             <input type="number" value={bidAskSpread} onChange={(e) => setBidAskSpread(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" max="50" step="0.5" title="Half-spread applied at each fill as % of option price" />
           </label>
+
+          {/* Position sizing */}
           <label className="flex flex-col gap-0.5">
             <span className="text-slate-500">Position Sizing</span>
             <select value={positionSizing} onChange={(e) => setPositionSizing(e.target.value)}
@@ -756,11 +781,22 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
               <input type="number" value={riskPct} onChange={(e) => setRiskPct(+e.target.value || 1)} className="px-2 py-1 rounded" min="0.1" max="100" step="0.5" title="% of current capital allocated per debit trade" />
             </label>
           )}
+
+          {/* Skew */}
           <label className="flex items-center gap-1.5 cursor-pointer pt-4">
             <input type="checkbox" checked={useSkew} onChange={(e) => setUseSkew(e.target.checked)} className="accent-purple-500" />
             <span className={useSkew ? 'text-purple-300' : 'text-slate-500'}>Equity vol skew</span>
           </label>
         </div>
+
+        {/* Mode description */}
+        {strikeMode !== 'pct' && (
+          <div className="text-[10px] text-slate-500 mt-1 bg-slate-800/40 px-2 py-1 rounded">
+            {strikeMode === 'sigma'
+              ? 'Sigma mode: strikes placed N standard-deviation moves from spot using ATM IV × √DTE. Automatically widens in high-vol regimes — a 0.5σ OTM strike stays roughly constant-probability regardless of IV.'
+              : 'Delta mode: strikes solved analytically via BSM to hit the target delta (e.g. 0.20 = 20-delta). In high-vol environments the 20-delta strike sits further OTM in dollar terms, just as it would on a real options chain.'}
+          </div>
+        )}
         {useSkew && (
           <div className="text-[10px] text-slate-500 mt-1">
             Applies a slope of −0.5 to IV: OTM puts priced richer, OTM calls cheaper (realistic equity skew).

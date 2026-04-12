@@ -5,7 +5,7 @@
  * and portfolio snapshots at each time step.
  */
 
-import { bsmPrice } from './blackScholes.js';
+import { bsmPrice, strikeFromDelta } from './blackScholes.js';
 import {
   createPortfolio, createTrade, addTrade, closeTrade,
   expireTrade, takeSnapshot, calcMetrics, makeGroupId,
@@ -14,153 +14,146 @@ import {
 /* ── Strategy definitions for backtesting ───────────────── */
 
 /**
- * Build legs for a strategy at a given spot price.
- * Returns array of { type, direction, strike, iv, quantity }.
- * IVs here are relative anchors — skew is applied on top during entry.
+ * Strategy leg definitions.
+ *
+ * Each leg carries three strike-targeting fields so the engine can
+ * resolve the actual strike at runtime in any of three modes:
+ *   pct   — fixed % of spot (original behaviour; mode = 'pct')
+ *   sigma — N standard-deviation move using ATM IV and DTE (mode = 'sigma')
+ *   delta — target unsigned delta, solved analytically via BSM (mode = 'delta')
+ *
+ * The `iv` field is the pricing IV anchor (skew is applied on top).
+ * Strategies no longer pre-compute the dollar strike — that is done by
+ * resolveStrike() inside runBacktest so the same definition works for all modes.
  */
 const BACKTEST_STRATEGIES = {
-  'Long Call (ATM)': (S) => [
-    { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+  // ── Directional / long premium ────────────────────────────
+  'Long Call (ATM)': () => [
+    { type: 'call', direction: 'long',  pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
   ],
-  'Long Put (ATM)': (S) => [
-    { type: 'put', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+  'Long Put (ATM)': () => [
+    { type: 'put',  direction: 'long',  pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
   ],
-  'Bull Call Spread': (S) => [
-    { type: 'call', direction: 'long', strike: Math.round(S * 0.97), iv: 0.30, quantity: 1 },
-    { type: 'call', direction: 'short', strike: Math.round(S * 1.03), iv: 0.28, quantity: 1 },
+
+  // Debit spreads
+  'Bull Call Spread': () => [
+    { type: 'call', direction: 'long',  pct: 0.97, sigma: -0.35, delta: 0.60, iv: 0.30, quantity: 1 },
+    { type: 'call', direction: 'short', pct: 1.03, sigma:  0.35, delta: 0.40, iv: 0.28, quantity: 1 },
   ],
-  'Bear Put Spread': (S) => [
-    { type: 'put', direction: 'long', strike: Math.round(S * 1.03), iv: 0.30, quantity: 1 },
-    { type: 'put', direction: 'short', strike: Math.round(S * 0.97), iv: 0.28, quantity: 1 },
+  'Bear Put Spread': () => [
+    { type: 'put',  direction: 'long',  pct: 1.03, sigma:  0.35, delta: 0.60, iv: 0.30, quantity: 1 },
+    { type: 'put',  direction: 'short', pct: 0.97, sigma: -0.35, delta: 0.40, iv: 0.28, quantity: 1 },
   ],
-  'Iron Condor': (S) => [
-    { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1 },
-    { type: 'put', direction: 'long', strike: Math.round(S * 0.90), iv: 0.30, quantity: 1 },
-    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
-    { type: 'call', direction: 'long', strike: Math.round(S * 1.10), iv: 0.30, quantity: 1 },
+
+  // Classic multi-leg
+  'Iron Condor': () => [
+    { type: 'put',  direction: 'short', pct: 0.95, sigma: -0.50, delta: 0.20, iv: 0.28, quantity: 1 },
+    { type: 'put',  direction: 'long',  pct: 0.90, sigma: -1.00, delta: 0.10, iv: 0.30, quantity: 1 },
+    { type: 'call', direction: 'short', pct: 1.05, sigma:  0.50, delta: 0.20, iv: 0.28, quantity: 1 },
+    { type: 'call', direction: 'long',  pct: 1.10, sigma:  1.00, delta: 0.10, iv: 0.30, quantity: 1 },
   ],
-  'Straddle': (S) => [
-    { type: 'call', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
-    { type: 'put', direction: 'long', strike: Math.round(S), iv: 0.30, quantity: 1 },
+  'Straddle': () => [
+    { type: 'call', direction: 'long',  pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
+    { type: 'put',  direction: 'long',  pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
   ],
-  'Strangle': (S) => [
-    { type: 'call', direction: 'long', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
-    { type: 'put', direction: 'long', strike: Math.round(S * 0.95), iv: 0.28, quantity: 1 },
+  'Strangle': () => [
+    { type: 'call', direction: 'long',  pct: 1.05, sigma:  0.50, delta: 0.30, iv: 0.28, quantity: 1 },
+    { type: 'put',  direction: 'long',  pct: 0.95, sigma: -0.50, delta: 0.30, iv: 0.28, quantity: 1 },
   ],
-  'Covered Call': (S) => [
-    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+  'Covered Call': () => [
+    { type: 'call', direction: 'short', pct: 1.05, sigma:  0.50, delta: 0.30, iv: 0.28, quantity: 1 },
   ],
-  'Protective Put': (S) => [
-    { type: 'put', direction: 'long', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+  'Protective Put': () => [
+    { type: 'put',  direction: 'long',  pct: 0.95, sigma: -0.50, delta: 0.30, iv: 0.30, quantity: 1 },
   ],
-  'Butterfly Spread': (S) => [
-    { type: 'call', direction: 'long', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
-    { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.29, quantity: 2 },
-    { type: 'call', direction: 'long', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+  'Butterfly Spread': () => [
+    { type: 'call', direction: 'long',  pct: 0.95, sigma: -0.50, delta: 0.65, iv: 0.30, quantity: 1 },
+    { type: 'call', direction: 'short', pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.29, quantity: 2 },
+    { type: 'call', direction: 'long',  pct: 1.05, sigma:  0.50, delta: 0.35, iv: 0.28, quantity: 1 },
   ],
 
   // ── Credit spreads ────────────────────────────────────────
-  // Collect premium with defined max loss; common income strategies.
-
   /** Short OTM put spread — bullish bias, collects credit. */
-  'Bull Put Spread': (S) => [
-    { type: 'put', direction: 'short', strike: Math.round(S * 0.97), iv: 0.31, quantity: 1 },
-    { type: 'put', direction: 'long',  strike: Math.round(S * 0.93), iv: 0.33, quantity: 1 },
+  'Bull Put Spread': () => [
+    { type: 'put',  direction: 'short', pct: 0.97, sigma: -0.35, delta: 0.30, iv: 0.31, quantity: 1 },
+    { type: 'put',  direction: 'long',  pct: 0.93, sigma: -0.80, delta: 0.15, iv: 0.33, quantity: 1 },
   ],
-
   /** Short OTM call spread — bearish bias, collects credit. */
-  'Bear Call Spread': (S) => [
-    { type: 'call', direction: 'short', strike: Math.round(S * 1.03), iv: 0.27, quantity: 1 },
-    { type: 'call', direction: 'long',  strike: Math.round(S * 1.07), iv: 0.26, quantity: 1 },
+  'Bear Call Spread': () => [
+    { type: 'call', direction: 'short', pct: 1.03, sigma:  0.35, delta: 0.30, iv: 0.27, quantity: 1 },
+    { type: 'call', direction: 'long',  pct: 1.07, sigma:  0.80, delta: 0.15, iv: 0.26, quantity: 1 },
   ],
 
   // ── Short premium (undefined risk) ───────────────────────
-  // Profit from IV crush or range-bound market; require active management.
-
   /** Short ATM call + put — maximum theta decay, undefined risk. */
-  'Short Straddle': (S) => [
-    { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
-    { type: 'put',  direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+  'Short Straddle': () => [
+    { type: 'call', direction: 'short', pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
+    { type: 'put',  direction: 'short', pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
   ],
-
   /** Short OTM call + put — wider break-evens than Short Straddle. */
-  'Short Strangle': (S) => [
-    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
-    { type: 'put',  direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+  'Short Strangle': () => [
+    { type: 'call', direction: 'short', pct: 1.05, sigma:  0.50, delta: 0.25, iv: 0.28, quantity: 1 },
+    { type: 'put',  direction: 'short', pct: 0.95, sigma: -0.50, delta: 0.25, iv: 0.30, quantity: 1 },
   ],
-
   /** Sell OTM put secured by cash — mildly bullish income strategy. */
-  'Cash-Secured Put': (S) => [
-    { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+  'Cash-Secured Put': () => [
+    { type: 'put',  direction: 'short', pct: 0.95, sigma: -0.50, delta: 0.30, iv: 0.30, quantity: 1 },
   ],
 
   // ── Iron Butterfly ────────────────────────────────────────
-  /** Short ATM straddle + protective OTM wings — higher credit than Iron Condor, narrower tent. */
-  'Iron Butterfly': (S) => [
-    { type: 'put',  direction: 'short', strike: Math.round(S),        iv: 0.30, quantity: 1 },
-    { type: 'put',  direction: 'long',  strike: Math.round(S * 0.93), iv: 0.33, quantity: 1 },
-    { type: 'call', direction: 'short', strike: Math.round(S),        iv: 0.30, quantity: 1 },
-    { type: 'call', direction: 'long',  strike: Math.round(S * 1.07), iv: 0.27, quantity: 1 },
+  /** Short ATM straddle + protective OTM wings. */
+  'Iron Butterfly': () => [
+    { type: 'put',  direction: 'short', pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
+    { type: 'put',  direction: 'long',  pct: 0.93, sigma: -0.80, delta: 0.15, iv: 0.33, quantity: 1 },
+    { type: 'call', direction: 'short', pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
+    { type: 'call', direction: 'long',  pct: 1.07, sigma:  0.80, delta: 0.15, iv: 0.27, quantity: 1 },
   ],
 
   // ── Ratio spreads ─────────────────────────────────────────
-  // Sell more contracts than bought — low/zero cost, but naked exposure beyond upper short.
-
-  /** Long 1 ATM call, short 2 OTM calls — low debit or credit, profits from modest rally. */
-  'Call Ratio Spread': (S) => [
-    { type: 'call', direction: 'long',  strike: Math.round(S),        iv: 0.30, quantity: 1 },
-    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 2 },
+  /** Long 1 ATM call, short 2 OTM calls. */
+  'Call Ratio Spread': () => [
+    { type: 'call', direction: 'long',  pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
+    { type: 'call', direction: 'short', pct: 1.05, sigma:  0.50, delta: 0.30, iv: 0.28, quantity: 2 },
   ],
-
-  /** Long 1 ATM put, short 2 OTM puts — low debit or credit, profits from modest decline. */
-  'Put Ratio Spread': (S) => [
-    { type: 'put', direction: 'long',  strike: Math.round(S),        iv: 0.30, quantity: 1 },
-    { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.32, quantity: 2 },
+  /** Long 1 ATM put, short 2 OTM puts. */
+  'Put Ratio Spread': () => [
+    { type: 'put',  direction: 'long',  pct: 1.00, sigma:  0,    delta: 0.50, iv: 0.30, quantity: 1 },
+    { type: 'put',  direction: 'short', pct: 0.95, sigma: -0.50, delta: 0.30, iv: 0.32, quantity: 2 },
   ],
 
   // ── Asymmetric income ─────────────────────────────────────
-
-  /**
-   * Short OTM put + short OTM call spread (bear call spread).
-   * No upside risk above the call spread; collects more premium than a strangle alone.
-   */
-  'Jade Lizard': (S) => [
-    { type: 'put',  direction: 'short', strike: Math.round(S * 0.95), iv: 0.32, quantity: 1 },
-    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
-    { type: 'call', direction: 'long',  strike: Math.round(S * 1.08), iv: 0.27, quantity: 1 },
+  /** Short OTM put + bear call spread; no upside risk above the call spread. */
+  'Jade Lizard': () => [
+    { type: 'put',  direction: 'short', pct: 0.95, sigma: -0.50, delta: 0.25, iv: 0.32, quantity: 1 },
+    { type: 'call', direction: 'short', pct: 1.05, sigma:  0.50, delta: 0.25, iv: 0.28, quantity: 1 },
+    { type: 'call', direction: 'long',  pct: 1.08, sigma:  0.90, delta: 0.15, iv: 0.27, quantity: 1 },
   ],
-
   /**
-   * Broken-wing put butterfly — skewed so the lower wing is wider,
-   * typically entered for a small credit with no upside risk.
+   * Broken-wing put butterfly — wider lower wing, typically entered for a small credit.
    * Upper spread width ~3%, lower spread width ~8%.
    */
-  'Put Broken-Wing Butterfly': (S) => [
-    { type: 'put', direction: 'long',  strike: Math.round(S * 0.98), iv: 0.30, quantity: 1 },
-    { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.31, quantity: 2 },
-    { type: 'put', direction: 'long',  strike: Math.round(S * 0.87), iv: 0.35, quantity: 1 },
+  'Put Broken-Wing Butterfly': () => [
+    { type: 'put',  direction: 'long',  pct: 0.98, sigma: -0.20, delta: 0.45, iv: 0.30, quantity: 1 },
+    { type: 'put',  direction: 'short', pct: 0.95, sigma: -0.50, delta: 0.30, iv: 0.31, quantity: 2 },
+    { type: 'put',  direction: 'long',  pct: 0.87, sigma: -1.50, delta: 0.10, iv: 0.35, quantity: 1 },
   ],
 
   // ── Multi-expiry strategies (per-leg dte field) ───────────
-  // Short leg uses the global dte; long leg overrides via dte property.
-
   /**
-   * Short ATM option (global DTE) vs long same-strike option (2× DTE).
-   * Profits from IV expansion and time-value differential.
-   * Use with managementDte to exit before the long leg's value collapses.
+   * Short ATM call (global DTE) vs long same-strike call (2× DTE).
+   * sigma=0 keeps both legs ATM regardless of mode.
    */
-  'Calendar Spread (Call)': (S) => [
-    { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
-    { type: 'call', direction: 'long',  strike: Math.round(S), iv: 0.28, quantity: 1, dte: 60 },
+  'Calendar Spread (Call)': () => [
+    { type: 'call', direction: 'short', pct: 1.00, sigma: 0, delta: 0.50, iv: 0.30, quantity: 1 },
+    { type: 'call', direction: 'long',  pct: 1.00, sigma: 0, delta: 0.50, iv: 0.28, quantity: 1, dte: 60 },
   ],
-
   /**
-   * Poor Man's Covered Call — long deep-ITM call (90 DTE) as stock substitute,
-   * short OTM call (global DTE, typically 30) for premium income.
+   * Long deep-ITM call (90 DTE) as stock substitute; short OTM call (global DTE) for income.
+   * pct=0.80 / sigma=-1.5 / delta=0.80 all target a high-delta long leg.
    */
-  'PMCC': (S) => [
-    { type: 'call', direction: 'long',  strike: Math.round(S * 0.80), iv: 0.28, quantity: 1, dte: 90 },
-    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.27, quantity: 1 },
+  'PMCC': () => [
+    { type: 'call', direction: 'long',  pct: 0.80, sigma: -1.50, delta: 0.80, iv: 0.28, quantity: 1, dte: 90 },
+    { type: 'call', direction: 'short', pct: 1.05, sigma:  0.50, delta: 0.25, iv: 0.27, quantity: 1 },
   ],
 };
 
@@ -188,6 +181,8 @@ export const STRATEGY_NAMES = Object.keys(BACKTEST_STRATEGIES);
  * @param {string} [config.positionSizing='fixed'] - 'fixed' (1 contract) or 'fractional' (size by riskPct)
  * @param {number} [config.riskPct=2] - % of current capital to risk per trade (for 'fractional' sizing)
  * @param {number} [config.skewSlope=0] - Vol skew slope (e.g. -0.5 = typical equity skew; 0 = flat)
+ * @param {'pct'|'sigma'|'delta'} [config.strikeMode='pct'] - Strike resolution mode
+ * @param {number} [config.strikeIncrement=0] - Snap resolved strikes to this grid (0 = nearest integer)
  * @param {Object} [config.existingPortfolio] - Append to this portfolio instead of creating a new one
  * @returns {{ portfolio: Object, metrics: Object, equityCurve: Array }}
  */
@@ -210,6 +205,8 @@ export function runBacktest({
   positionSizing = 'fixed',
   riskPct = 2,
   skewSlope = 0,
+  strikeMode = 'pct',
+  strikeIncrement = 0,
   existingPortfolio,
 }) {
   const strategyFn = BACKTEST_STRATEGIES[strategy];
@@ -241,17 +238,24 @@ export function runBacktest({
     if (pendingEntry) {
       const { legs: pendingLegs, gid } = pendingEntry;
 
-      // Determine quantity based on position sizing (uses per-leg DTE for cost calc)
+      // Step 1 — resolve strikes for all legs (mode-aware, then snapped to increment)
+      const resolvedLegs = pendingLegs.map((leg) => {
+        const legDte = leg.dte ?? dte;
+        const strike = resolveStrike(leg, executionSpot, strikeMode, iv, legDte, riskFreeRate, divYield, strikeIncrement);
+        return { ...leg, strike };
+      });
+
+      // Step 2 — determine quantity based on position sizing
       const currentCapital =
         portfolio.snapshots.length > 0
           ? portfolio.snapshots[portfolio.snapshots.length - 1].totalValue
           : startingCapital;
       const qty = calcEntryQuantity(
-        pendingLegs, executionSpot, dte, riskFreeRate, divYield,
+        resolvedLegs, executionSpot, dte, riskFreeRate, divYield,
         positionSizing, riskPct, currentCapital,
       );
 
-      for (const leg of pendingLegs) {
+      for (const leg of resolvedLegs) {
         // Per-leg DTE: strategies like Calendar/PMCC set leg.dte on individual legs
         const legDte = leg.dte ?? dte;
         const legExpDate = addDays(date, legDte);
@@ -296,7 +300,7 @@ export function runBacktest({
     // ── Check entry condition — signal uses today's close (no look-ahead) ──
     daysSinceEntry++;
     if (daysSinceEntry >= entryInterval) {
-      const legs = strategyFn(spot); // strikes decided at today's close
+      const legs = strategyFn(); // returns pct/sigma/delta specs; strike resolved at execution
       pendingEntry = {
         legs,
         gid: makeGroupId(),
@@ -462,6 +466,47 @@ function addDays(dateStr, days) {
   const d = new Date(dateStr);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Snap a raw strike to the nearest valid increment.
+ * increment = 0 → round to nearest integer (default for individual stocks).
+ */
+function snapStrike(raw, increment) {
+  if (!increment || increment <= 0) return Math.round(raw);
+  return Math.round(raw / increment) * increment;
+}
+
+/**
+ * Resolve the dollar strike for a leg based on the selected strike mode,
+ * then snap it to the configured increment.
+ *
+ * @param {Object} leg          - Leg spec with pct, sigma, delta fields
+ * @param {number} S            - Current spot price
+ * @param {'pct'|'sigma'|'delta'} mode
+ * @param {number} atmIv        - User-configured ATM IV (used for sigma/delta math)
+ * @param {number} legDte       - This leg's DTE in days
+ * @param {number} r            - Risk-free rate
+ * @param {number} q            - Dividend yield
+ * @param {number} increment    - Strike grid size (0 = nearest integer)
+ */
+function resolveStrike(leg, S, mode, atmIv, legDte, r, q, increment) {
+  const t = legDte / 365;
+  let raw;
+
+  if (mode === 'sigma') {
+    // Place strike N standard-deviation moves from spot using ATM IV and DTE.
+    // sigma > 0 → above spot (call side); sigma < 0 → below spot (put side).
+    raw = S * Math.exp((leg.sigma ?? 0) * atmIv * Math.sqrt(t));
+  } else if (mode === 'delta') {
+    // Solve analytically for the strike that produces the target unsigned delta.
+    raw = strikeFromDelta(S, leg.delta ?? 0.50, t, r, atmIv, q, leg.type);
+  } else {
+    // 'pct' mode — fixed percentage of spot (original behaviour)
+    raw = S * (leg.pct ?? 1.0);
+  }
+
+  return snapStrike(raw, increment);
 }
 
 /**
