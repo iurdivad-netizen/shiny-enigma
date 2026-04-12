@@ -58,6 +58,110 @@ const BACKTEST_STRATEGIES = {
     { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.29, quantity: 2 },
     { type: 'call', direction: 'long', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
   ],
+
+  // ── Credit spreads ────────────────────────────────────────
+  // Collect premium with defined max loss; common income strategies.
+
+  /** Short OTM put spread — bullish bias, collects credit. */
+  'Bull Put Spread': (S) => [
+    { type: 'put', direction: 'short', strike: Math.round(S * 0.97), iv: 0.31, quantity: 1 },
+    { type: 'put', direction: 'long',  strike: Math.round(S * 0.93), iv: 0.33, quantity: 1 },
+  ],
+
+  /** Short OTM call spread — bearish bias, collects credit. */
+  'Bear Call Spread': (S) => [
+    { type: 'call', direction: 'short', strike: Math.round(S * 1.03), iv: 0.27, quantity: 1 },
+    { type: 'call', direction: 'long',  strike: Math.round(S * 1.07), iv: 0.26, quantity: 1 },
+  ],
+
+  // ── Short premium (undefined risk) ───────────────────────
+  // Profit from IV crush or range-bound market; require active management.
+
+  /** Short ATM call + put — maximum theta decay, undefined risk. */
+  'Short Straddle': (S) => [
+    { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+    { type: 'put',  direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+  ],
+
+  /** Short OTM call + put — wider break-evens than Short Straddle. */
+  'Short Strangle': (S) => [
+    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+    { type: 'put',  direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+  ],
+
+  /** Sell OTM put secured by cash — mildly bullish income strategy. */
+  'Cash-Secured Put': (S) => [
+    { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.30, quantity: 1 },
+  ],
+
+  // ── Iron Butterfly ────────────────────────────────────────
+  /** Short ATM straddle + protective OTM wings — higher credit than Iron Condor, narrower tent. */
+  'Iron Butterfly': (S) => [
+    { type: 'put',  direction: 'short', strike: Math.round(S),        iv: 0.30, quantity: 1 },
+    { type: 'put',  direction: 'long',  strike: Math.round(S * 0.93), iv: 0.33, quantity: 1 },
+    { type: 'call', direction: 'short', strike: Math.round(S),        iv: 0.30, quantity: 1 },
+    { type: 'call', direction: 'long',  strike: Math.round(S * 1.07), iv: 0.27, quantity: 1 },
+  ],
+
+  // ── Ratio spreads ─────────────────────────────────────────
+  // Sell more contracts than bought — low/zero cost, but naked exposure beyond upper short.
+
+  /** Long 1 ATM call, short 2 OTM calls — low debit or credit, profits from modest rally. */
+  'Call Ratio Spread': (S) => [
+    { type: 'call', direction: 'long',  strike: Math.round(S),        iv: 0.30, quantity: 1 },
+    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 2 },
+  ],
+
+  /** Long 1 ATM put, short 2 OTM puts — low debit or credit, profits from modest decline. */
+  'Put Ratio Spread': (S) => [
+    { type: 'put', direction: 'long',  strike: Math.round(S),        iv: 0.30, quantity: 1 },
+    { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.32, quantity: 2 },
+  ],
+
+  // ── Asymmetric income ─────────────────────────────────────
+
+  /**
+   * Short OTM put + short OTM call spread (bear call spread).
+   * No upside risk above the call spread; collects more premium than a strangle alone.
+   */
+  'Jade Lizard': (S) => [
+    { type: 'put',  direction: 'short', strike: Math.round(S * 0.95), iv: 0.32, quantity: 1 },
+    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.28, quantity: 1 },
+    { type: 'call', direction: 'long',  strike: Math.round(S * 1.08), iv: 0.27, quantity: 1 },
+  ],
+
+  /**
+   * Broken-wing put butterfly — skewed so the lower wing is wider,
+   * typically entered for a small credit with no upside risk.
+   * Upper spread width ~3%, lower spread width ~8%.
+   */
+  'Put Broken-Wing Butterfly': (S) => [
+    { type: 'put', direction: 'long',  strike: Math.round(S * 0.98), iv: 0.30, quantity: 1 },
+    { type: 'put', direction: 'short', strike: Math.round(S * 0.95), iv: 0.31, quantity: 2 },
+    { type: 'put', direction: 'long',  strike: Math.round(S * 0.87), iv: 0.35, quantity: 1 },
+  ],
+
+  // ── Multi-expiry strategies (per-leg dte field) ───────────
+  // Short leg uses the global dte; long leg overrides via dte property.
+
+  /**
+   * Short ATM option (global DTE) vs long same-strike option (2× DTE).
+   * Profits from IV expansion and time-value differential.
+   * Use with managementDte to exit before the long leg's value collapses.
+   */
+  'Calendar Spread (Call)': (S) => [
+    { type: 'call', direction: 'short', strike: Math.round(S), iv: 0.30, quantity: 1 },
+    { type: 'call', direction: 'long',  strike: Math.round(S), iv: 0.28, quantity: 1, dte: 60 },
+  ],
+
+  /**
+   * Poor Man's Covered Call — long deep-ITM call (90 DTE) as stock substitute,
+   * short OTM call (global DTE, typically 30) for premium income.
+   */
+  'PMCC': (S) => [
+    { type: 'call', direction: 'long',  strike: Math.round(S * 0.80), iv: 0.28, quantity: 1, dte: 90 },
+    { type: 'call', direction: 'short', strike: Math.round(S * 1.05), iv: 0.27, quantity: 1 },
+  ],
 };
 
 export const STRATEGY_NAMES = Object.keys(BACKTEST_STRATEGIES);
@@ -124,7 +228,7 @@ export function runBacktest({
   // daysSinceEntry starts at entryInterval so a signal fires on bar 0,
   // but execution is deferred to bar 1 (look-ahead fix).
   let daysSinceEntry = entryInterval;
-  let pendingEntry = null; // { legs, expDate, gid, signalSpot }
+  let pendingEntry = null; // { legs, gid, signalSpot }
 
   for (let i = 0; i < priceData.length; i++) {
     const bar = priceData[i];
@@ -135,9 +239,9 @@ export function runBacktest({
 
     // ── Execute deferred entry from previous bar's signal ──────────────────
     if (pendingEntry) {
-      const { legs: pendingLegs, expDate, gid } = pendingEntry;
+      const { legs: pendingLegs, gid } = pendingEntry;
 
-      // Determine quantity based on position sizing
+      // Determine quantity based on position sizing (uses per-leg DTE for cost calc)
       const currentCapital =
         portfolio.snapshots.length > 0
           ? portfolio.snapshots[portfolio.snapshots.length - 1].totalValue
@@ -148,8 +252,11 @@ export function runBacktest({
       );
 
       for (const leg of pendingLegs) {
+        // Per-leg DTE: strategies like Calendar/PMCC set leg.dte on individual legs
+        const legDte = leg.dte ?? dte;
+        const legExpDate = addDays(date, legDte);
         const legIv = applySkew(leg.iv || iv, leg.strike, executionSpot, skewSlope);
-        const t = dte / 365;
+        const t = legDte / 365;
         const prices = bsmPrice(executionSpot, leg.strike, t, riskFreeRate, legIv, divYield);
         const midPrice = leg.type === 'call' ? prices.call : prices.put;
 
@@ -169,7 +276,7 @@ export function runBacktest({
           quantity: qty,
           iv: legIv,
           underlyingPrice: executionSpot,
-          expiration: expDate,
+          expiration: legExpDate,
           groupId: gid,
           openedAt: date,
         });
@@ -192,9 +299,9 @@ export function runBacktest({
       const legs = strategyFn(spot); // strikes decided at today's close
       pendingEntry = {
         legs,
-        expDate: addDays(date, dte),
         gid: makeGroupId(),
         signalSpot: spot,
+        // expDate is computed per-leg at execution time using leg.dte ?? dte
       };
       // daysSinceEntry reset happens when entry is executed on the next bar
     }
@@ -374,13 +481,14 @@ function applySkew(baseIv, strike, spot, skewSlope) {
  * 'fractional' → size so net debit ≈ riskPct% of current capital.
  *                Credit strategies default to 1 contract (max loss unknown without spread width).
  */
-function calcEntryQuantity(legs, spot, dte, r, q, positionSizing, riskPct, capital) {
+function calcEntryQuantity(legs, spot, defaultDte, r, q, positionSizing, riskPct, capital) {
   if (positionSizing !== 'fractional') return 1;
 
-  // Net debit/credit per 1 contract unit
+  // Net debit/credit per 1 contract unit (respects per-leg DTE overrides)
   let netCost = 0;
   for (const leg of legs) {
-    const t = dte / 365;
+    const legDte = leg.dte ?? defaultDte;
+    const t = legDte / 365;
     const prices = bsmPrice(spot, leg.strike, t, r, leg.iv, q);
     const mid = leg.type === 'call' ? prices.call : prices.put;
     netCost += (leg.direction === 'long' ? 1 : -1) * mid * 100;
