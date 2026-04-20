@@ -42,6 +42,7 @@ export default function App() {
   const [expandHistory, setExpandHistory] = useState(false);
   const [filterCat, setFilterCat] = useState(null);
   const [tickerLabel, setTickerLabel] = useState('');
+  const [simulationDate, setSimulationDate] = useState('');
   const [activeTab, setActiveTab] = useState('simulation');
 
   // Shared historical price data (loaded in HistoricalData, reusable in BacktestPanel)
@@ -324,19 +325,20 @@ export default function App() {
         id: makeId(), type: 'call', direction: 'long',
         strike: Math.round(underlyingPrice), iv: 0.3, quantity: 1,
         premium: 0, visible: true, premiumOverride: false,
+        openDate: simulationDate || '',
       },
     ]);
     setActivePreset(null);
-  }, [underlyingPrice]);
+  }, [underlyingPrice, simulationDate]);
 
   /** Add a leg from the options chain (pre-populated with market data). */
   const addLegFromChain = useCallback((legData) => {
     setLegs((prev) => [
       ...prev,
-      { ...legData, id: makeId(), visible: true },
+      { openDate: simulationDate || '', ...legData, id: makeId(), visible: true },
     ]);
     setActivePreset(null);
-  }, []);
+  }, [simulationDate]);
 
   const updateLeg = useCallback((id, field, value) => {
     setLegs((prev) =>
@@ -383,8 +385,8 @@ export default function App() {
 
   const getCurrentSession = useCallback(() => captureSession({
     underlyingPrice, riskFreeRate, daysToExpiry, dividendYield,
-    legs, timePercent, ivShift, tickerLabel, activePreset,
-  }), [underlyingPrice, riskFreeRate, daysToExpiry, dividendYield, legs, timePercent, ivShift, tickerLabel, activePreset]);
+    legs, timePercent, ivShift, tickerLabel, activePreset, simulationDate,
+  }), [underlyingPrice, riskFreeRate, daysToExpiry, dividendYield, legs, timePercent, ivShift, tickerLabel, activePreset, simulationDate]);
 
   const restoreSession = useCallback((session) => {
     if (typeof session.underlyingPrice === 'number') setUnderlyingPrice(session.underlyingPrice);
@@ -394,6 +396,7 @@ export default function App() {
     if (typeof session.timePercent === 'number') setTimePercent(session.timePercent);
     if (typeof session.ivShift === 'number') setIvShift(session.ivShift);
     if (typeof session.tickerLabel === 'string') setTickerLabel(session.tickerLabel);
+    if (typeof session.simulationDate === 'string') setSimulationDate(session.simulationDate);
     setActivePreset(session.activePreset ?? null);
     if (Array.isArray(session.legs)) {
       setLegs(session.legs.map((l) => ({ ...l, id: makeId(), visible: l.visible !== false })));
@@ -459,6 +462,7 @@ export default function App() {
   const handleHistoricalQuote = useCallback((q) => {
     setUnderlyingPrice(q.close);
     setTickerLabel(`${q.symbol} — Historical (${q.date})`);
+    setSimulationDate(q.date);
   }, []);
 
   /** Callback from HistoricalData when price data is loaded — shares it with BacktestPanel. */
@@ -997,9 +1001,16 @@ export default function App() {
             {/* ── Legs Table ──────────────────────────────── */}
             <div className="mt-5">
               <div className="flex justify-between items-center mb-2.5">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Option Legs ({legsWithPremiums.length})
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    Option Legs ({legsWithPremiums.length})
+                  </span>
+                  {simulationDate && (
+                    <span className="text-[10px] text-slate-500">
+                      Open: {simulationDate}
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   {legsWithPremiums.length > 0 && (
                     <button
@@ -1024,7 +1035,7 @@ export default function App() {
                     <table className="w-full border-collapse text-[13px]">
                       <thead>
                         <tr className="border-b border-slate-800">
-                          {['', 'Type', 'Side', 'Strike', 'IV %', 'DTE', 'Qty', 'Premium', 'Δ', 'Γ', 'Θ', 'ν', ''].map((h, i) => (
+                          {['', 'Type', 'Side', 'Strike', 'IV %', 'DTE', 'Open Date', 'Qty', 'Premium', 'Δ', 'Γ', 'Θ', 'ν', ''].map((h, i) => (
                             <th
                               key={i}
                               className="px-2.5 py-2 text-left text-[10px] text-slate-500 uppercase tracking-wider font-semibold whitespace-nowrap"
@@ -1099,6 +1110,13 @@ export default function App() {
                                   type="number" value={legDte(leg)}
                                   onChange={(e) => updateLeg(leg.id, 'dte', Math.max(0, +e.target.value || 0))}
                                   className="w-[52px] text-right" step="1" min="0"
+                                />
+                              </td>
+                              <td className="px-1.5 py-1.5">
+                                <input
+                                  type="date" value={leg.openDate || ''}
+                                  onChange={(e) => updateLeg(leg.id, 'openDate', e.target.value)}
+                                  className="w-[120px] text-[11px]"
                                 />
                               </td>
                               <td className="px-1.5 py-1.5">

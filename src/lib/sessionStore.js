@@ -15,7 +15,7 @@ const MAX_SLOTS = 20;
  */
 export function captureSession({
   underlyingPrice, riskFreeRate, daysToExpiry, dividendYield,
-  legs, timePercent, ivShift, tickerLabel, activePreset,
+  legs, timePercent, ivShift, tickerLabel, activePreset, simulationDate,
 }) {
   return {
     underlyingPrice,
@@ -27,6 +27,7 @@ export function captureSession({
     ivShift,
     tickerLabel,
     activePreset,
+    simulationDate: simulationDate || '',
   };
 }
 
