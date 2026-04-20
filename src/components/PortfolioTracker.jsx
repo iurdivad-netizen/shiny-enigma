@@ -14,7 +14,7 @@ const fmtMoney = (n) => {
 
 const fmtPct = (n) => `${(n * 100).toFixed(1)}%`;
 
-export default function PortfolioTracker({ portfolios, onDelete, onSelect, onRename, selectedId }) {
+export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, onSelect, selectedId }) {
   const [detailId, setDetailId] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
@@ -76,13 +76,7 @@ export default function PortfolioTracker({ portfolios, onDelete, onSelect, onRen
   }, [portfolios]);
 
   if (detail) {
-    return (
-      <PortfolioDetail
-        portfolio={detail}
-        onBack={() => setDetailId(null)}
-        onRename={onRename}
-      />
-    );
+    return <PortfolioDetail portfolio={detail} onBack={() => setDetailId(null)} onDeleteTrade={onDeleteTrade} />;
   }
 
   return (
@@ -274,7 +268,7 @@ export default function PortfolioTracker({ portfolios, onDelete, onSelect, onRen
 
 /* ── Detail view ────────────────────────────────────────── */
 
-function PortfolioDetail({ portfolio, onBack, onRename }) {
+function PortfolioDetail({ portfolio, onBack, onDeleteTrade }) {
   const [tab, setTab] = useState('overview'); // 'overview' | 'trades' | 'equity'
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
@@ -354,7 +348,7 @@ function PortfolioDetail({ portfolio, onBack, onRename }) {
       </div>
 
       {tab === 'overview' && <OverviewTab metrics={metrics} portfolio={portfolio} />}
-      {tab === 'trades' && <TradesTab portfolio={portfolio} />}
+      {tab === 'trades' && <TradesTab portfolio={portfolio} onDeleteTrade={onDeleteTrade} />}
       {tab === 'equity' && <EquityTab portfolio={portfolio} />}
     </div>
   );
@@ -396,8 +390,9 @@ function OverviewTab({ metrics, portfolio }) {
   );
 }
 
-function TradesTab({ portfolio }) {
+function TradesTab({ portfolio, onDeleteTrade }) {
   const [filter, setFilter] = useState('all'); // 'all' | 'open' | 'closed'
+  const [confirmId, setConfirmId] = useState(null);
   const trades = portfolio.trades.filter((t) => {
     if (filter === 'open') return t.status === 'open';
     if (filter === 'closed') return t.status !== 'open';
@@ -438,6 +433,7 @@ function TradesTab({ portfolio }) {
               <th className="px-2 py-1">Expiry</th>
               <th className="px-2 py-1 text-right">P&L</th>
               <th className="px-2 py-1">Status</th>
+              {onDeleteTrade && <th className="px-2 py-1"></th>}
             </tr>
           </thead>
           <tbody>
@@ -492,6 +488,31 @@ function TradesTab({ portfolio }) {
                       {t.status}
                     </span>
                   </td>
+                  {onDeleteTrade && (
+                    <td className="px-2 py-1">
+                      {confirmId === t.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => { onDeleteTrade(portfolio.id, t.id); setConfirmId(null); }}
+                            className="px-1.5 py-0.5 text-[10px] bg-red-600/80 hover:bg-red-500 rounded text-white"
+                          >
+                            Del
+                          </button>
+                          <button onClick={() => setConfirmId(null)} className="text-slate-500 hover:text-slate-300">
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmId(t.id)}
+                          className="p-0.5 text-red-500/40 hover:text-red-400"
+                          title="Delete trade"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}

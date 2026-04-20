@@ -356,3 +356,7 @@ export function savePortfolios(portfolios) {
 export function deletePortfolio(portfolios, portfolioId) {
   return portfolios.filter((p) => p.id !== portfolioId);
 }
+
+export function deleteTrade(portfolio, tradeId) {
+  return { ...portfolio, trades: portfolio.trades.filter((t) => t.id !== tradeId) };
+}
