@@ -206,7 +206,7 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
       {/* Trade entry form */}
       {activePf && (
         <div className="border border-slate-700 rounded-lg p-3 space-y-2">
-          <div className="text-xs font-semibold text-slate-300">Log New Trade</div>
+          <div className="text-xs font-semibold text-slate-400">Log New Trade</div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <label className="flex flex-col gap-0.5">
               <span className="text-slate-500">Type</span>
