@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
-import { Plus, X, Camera, AlertTriangle, Download } from 'lucide-react';
+import { Plus, X, Camera, AlertTriangle, Download, Trash2 } from 'lucide-react';
 import {
   createPortfolio, createTrade, addTrade, closeTrade,
-  expireTrade, takeSnapshot, savePortfolios, makeGroupId,
+  expireTrade, deleteTrade, takeSnapshot, savePortfolios, makeGroupId,
 } from '../lib/portfolio.js';
 
 export default function ForwardTestPanel({ portfolios, setPortfolios, underlyingPrice, symbol, currentLegs, daysToExpiry }) {
@@ -21,6 +21,7 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
   const [tradeDte, setTradeDte] = useState(30);
   const [tradeNotes, setTradeNotes] = useState('');
   const [error, setError] = useState('');
+  const [confirmId, setConfirmId] = useState(null);
 
   const forwardPortfolios = portfolios.filter((p) => p.mode === 'forward');
   const activePf = portfolios.find((p) => p.id === activePortfolioId);
@@ -84,6 +85,15 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
     setPortfolios(updated);
     savePortfolios(updated);
   }, [activePf, underlyingPrice, portfolios, setPortfolios]);
+
+  const deleteTradeHandler = useCallback((tradeId) => {
+    if (!activePf) return;
+    const updated = portfolios.map((p) =>
+      p.id === activePf.id ? deleteTrade(p, tradeId) : p
+    );
+    setPortfolios(updated);
+    savePortfolios(updated);
+  }, [activePf, portfolios, setPortfolios]);
 
   const snap = useCallback(() => {
     if (!activePf) return;
@@ -292,7 +302,7 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
                     <td className="px-2 py-1 text-slate-400">{t.expiration}</td>
                     <td className="px-2 py-1 text-slate-500 max-w-[100px] truncate">{t.notes}</td>
                     <td className="px-2 py-1">
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 items-center">
                         <button
                           onClick={() => closeTradeHandler(t.id)}
                           className="px-1.5 py-0.5 text-[10px] bg-slate-700 hover:bg-slate-600 rounded"
@@ -305,6 +315,27 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
                         >
                           Expire
                         </button>
+                        {confirmId === t.id ? (
+                          <>
+                            <button
+                              onClick={() => { deleteTradeHandler(t.id); setConfirmId(null); }}
+                              className="px-1.5 py-0.5 text-[10px] bg-red-600/80 hover:bg-red-500 rounded text-white"
+                            >
+                              Del
+                            </button>
+                            <button onClick={() => setConfirmId(null)} className="text-slate-500 hover:text-slate-300">
+                              <X size={11} />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmId(t.id)}
+                            className="p-0.5 text-red-500/40 hover:text-red-400"
+                            title="Delete trade"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

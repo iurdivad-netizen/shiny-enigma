@@ -13,7 +13,7 @@ import {
   bsmPrice, legPnlAtExpiry, legPnlAtTime, legGreeks, normalCDF,
 } from './lib/blackScholes.js';
 import { LEG_COLORS, CATEGORIES, CAT_COLORS, PRESETS } from './lib/presets.js';
-import { loadPortfolios, savePortfolios, deletePortfolio } from './lib/portfolio.js';
+import { loadPortfolios, savePortfolios, deletePortfolio, deleteTrade } from './lib/portfolio.js';
 import {
   captureSession, saveSession, loadSavedSessions, deleteSavedSession,
   exportToFile, parseImportFile,
@@ -67,6 +67,12 @@ export default function App() {
     setPortfolios((prev) => deletePortfolio(prev, id));
     if (selectedPortfolioId === id) setSelectedPortfolioId(null);
   }, [selectedPortfolioId]);
+
+  const handleDeleteTrade = useCallback((portfolioId, tradeId) => {
+    setPortfolios((prev) =>
+      prev.map((p) => p.id === portfolioId ? deleteTrade(p, tradeId) : p)
+    );
+  }, []);
 
   const handleBacktestResult = useCallback((portfolio) => {
     setPortfolios((prev) => [...prev, portfolio]);
@@ -1205,6 +1211,7 @@ export default function App() {
               <PortfolioTracker
                 portfolios={portfolios.filter((p) => p.mode === 'backtest')}
                 onDelete={handleDeletePortfolio}
+                onDeleteTrade={handleDeleteTrade}
                 onSelect={setSelectedPortfolioId}
                 selectedId={selectedPortfolioId}
               />
@@ -1245,6 +1252,7 @@ export default function App() {
               <PortfolioTracker
                 portfolios={portfolios.filter((p) => p.mode === 'forward')}
                 onDelete={handleDeletePortfolio}
+                onDeleteTrade={handleDeleteTrade}
                 onSelect={setSelectedPortfolioId}
                 selectedId={selectedPortfolioId}
               />
