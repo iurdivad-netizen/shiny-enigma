@@ -14,7 +14,7 @@ const fmtMoney = (n) => {
 
 const fmtPct = (n) => `${(n * 100).toFixed(1)}%`;
 
-export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, onSelect, selectedId }) {
+export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, onRename, onSelect, selectedId }) {
   const [detailId, setDetailId] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
@@ -76,7 +76,7 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
   }, [portfolios]);
 
   if (detail) {
-    return <PortfolioDetail portfolio={detail} onBack={() => setDetailId(null)} onDeleteTrade={onDeleteTrade} />;
+    return <PortfolioDetail portfolio={detail} onBack={() => setDetailId(null)} onRename={onRename} onDeleteTrade={onDeleteTrade} />;
   }
 
   return (
@@ -268,7 +268,7 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
 
 /* ── Detail view ────────────────────────────────────────── */
 
-function PortfolioDetail({ portfolio, onBack, onDeleteTrade }) {
+function PortfolioDetail({ portfolio, onBack, onRename, onDeleteTrade }) {
   const [tab, setTab] = useState('overview'); // 'overview' | 'trades' | 'equity'
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');

@@ -331,6 +331,7 @@ export default function App() {
         id: makeId(), type: 'call', direction: 'long',
         strike: Math.round(underlyingPrice), iv: 0.3, quantity: 1,
         premium: 0, visible: true, premiumOverride: false,
+        createdAt: new Date().toISOString().slice(0, 10),
         openDate: simulationDate || '',
       },
     ]);
@@ -341,7 +342,13 @@ export default function App() {
   const addLegFromChain = useCallback((legData) => {
     setLegs((prev) => [
       ...prev,
-      { openDate: simulationDate || '', ...legData, id: makeId(), visible: true },
+      {
+        openDate: simulationDate || '',
+        ...legData,
+        createdAt: new Date().toISOString().slice(0, 10),
+        id: makeId(),
+        visible: true,
+      },
     ]);
     setActivePreset(null);
   }, [simulationDate]);
@@ -1041,7 +1048,7 @@ export default function App() {
                     <table className="w-full border-collapse text-[13px]">
                       <thead>
                         <tr className="border-b border-slate-800">
-                          {['', 'Type', 'Side', 'Strike', 'IV %', 'DTE', 'Open Date', 'Qty', 'Premium', 'Δ', 'Γ', 'Θ', 'ν', ''].map((h, i) => (
+                          {['', 'Type', 'Side', 'Strike', 'IV %', 'DTE', 'Created', 'Open Date', 'Qty', 'Premium', 'Δ', 'Γ', 'Θ', 'ν', ''].map((h, i) => (
                             <th
                               key={i}
                               className="px-2.5 py-2 text-left text-[10px] text-slate-500 uppercase tracking-wider font-semibold whitespace-nowrap"
@@ -1117,6 +1124,11 @@ export default function App() {
                                   onChange={(e) => updateLeg(leg.id, 'dte', Math.max(0, +e.target.value || 0))}
                                   className="w-[52px] text-right" step="1" min="0"
                                 />
+                              </td>
+                              <td className="px-1.5 py-1.5">
+                                <span className="font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                                  {leg.createdAt || '—'}
+                                </span>
                               </td>
                               <td className="px-1.5 py-1.5">
                                 <input
