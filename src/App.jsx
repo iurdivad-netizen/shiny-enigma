@@ -68,6 +68,10 @@ export default function App() {
     if (selectedPortfolioId === id) setSelectedPortfolioId(null);
   }, [selectedPortfolioId]);
 
+  const handleRenamePortfolio = useCallback((id, newName) => {
+    setPortfolios((prev) => prev.map((p) => p.id === id ? { ...p, name: newName } : p));
+  }, []);
+
   const handleBacktestResult = useCallback((portfolio) => {
     setPortfolios((prev) => [...prev, portfolio]);
     setSelectedPortfolioId(portfolio.id);
@@ -1205,6 +1209,7 @@ export default function App() {
               <PortfolioTracker
                 portfolios={portfolios.filter((p) => p.mode === 'backtest')}
                 onDelete={handleDeletePortfolio}
+                onRename={handleRenamePortfolio}
                 onSelect={setSelectedPortfolioId}
                 selectedId={selectedPortfolioId}
               />
@@ -1245,6 +1250,7 @@ export default function App() {
               <PortfolioTracker
                 portfolios={portfolios.filter((p) => p.mode === 'forward')}
                 onDelete={handleDeletePortfolio}
+                onRename={handleRenamePortfolio}
                 onSelect={setSelectedPortfolioId}
                 selectedId={selectedPortfolioId}
               />

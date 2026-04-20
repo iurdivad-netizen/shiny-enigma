@@ -431,7 +431,7 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
       {priceData.length > 0 && (
         <div className="border border-slate-700 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-slate-300">Trade Legs</div>
+            <div className="text-xs font-semibold text-slate-400">Trade Legs</div>
             <div className="flex gap-1">
               {currentLegs && currentLegs.length > 0 && (
                 <button

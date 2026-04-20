@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { Trash2, X, TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { Trash2, X, TrendingUp, TrendingDown, Activity, Pencil, Check } from 'lucide-react';
 import { calcMetrics, portfolioPnl, portfolioGreeks } from '../lib/portfolio.js';
 
 const fmtMoney = (n) => {
@@ -14,9 +14,28 @@ const fmtMoney = (n) => {
 
 const fmtPct = (n) => `${(n * 100).toFixed(1)}%`;
 
-export default function PortfolioTracker({ portfolios, onDelete, onSelect, selectedId }) {
+export default function PortfolioTracker({ portfolios, onDelete, onSelect, onRename, selectedId }) {
   const [detailId, setDetailId] = useState(null);
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef(null);
   const detail = portfolios.find((p) => p.id === detailId);
+
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) renameInputRef.current.focus();
+  }, [renamingId]);
+
+  const startRename = (e, pf) => {
+    e.stopPropagation();
+    setRenamingId(pf.id);
+    setRenameValue(pf.name);
+  };
+
+  const commitRename = (id) => {
+    const trimmed = renameValue.trim();
+    if (trimmed && onRename) onRename(id, trimmed);
+    setRenamingId(null);
+  };
 
   // Aggregate metrics across all portfolios in this view
   const aggregate = useMemo(() => {
@@ -57,7 +76,13 @@ export default function PortfolioTracker({ portfolios, onDelete, onSelect, selec
   }, [portfolios]);
 
   if (detail) {
-    return <PortfolioDetail portfolio={detail} onBack={() => setDetailId(null)} />;
+    return (
+      <PortfolioDetail
+        portfolio={detail}
+        onBack={() => setDetailId(null)}
+        onRename={onRename}
+      />
+    );
   }
 
   return (
@@ -71,7 +96,7 @@ export default function PortfolioTracker({ portfolios, onDelete, onSelect, selec
       {/* ── Aggregate Summary ────────────────────────── */}
       {aggregate && (
         <div className="bg-[#111827] rounded-lg border border-slate-800 p-4">
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold mb-3">
+          <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-3">
             Summary — {aggregate.count} Portfolio{aggregate.count !== 1 ? 's' : ''}
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -151,21 +176,55 @@ export default function PortfolioTracker({ portfolios, onDelete, onSelect, selec
             onClick={() => setDetailId(pf.id)}
           >
             <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                   pf.mode === 'backtest'
                     ? 'bg-purple-500/20 text-purple-400'
                     : 'bg-green-500/20 text-green-400'
                 }`}>
                   {pf.mode === 'backtest' ? 'BACKTEST' : 'FORWARD'}
                 </span>
-                <span className="text-sm font-medium text-slate-200">{pf.name}</span>
-                {pf.symbol && <span className="text-xs text-slate-500">{pf.symbol}</span>}
+                {renamingId === pf.id ? (
+                  <input
+                    ref={renameInputRef}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={() => commitRename(pf.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename(pf.id);
+                      if (e.key === 'Escape') setRenamingId(null);
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sm font-medium bg-slate-800 border border-blue-500 rounded px-1.5 py-0.5 text-slate-200 w-40 min-w-0"
+                  />
+                ) : (
+                  <span className="text-sm font-medium text-slate-200 truncate">{pf.name}</span>
+                )}
+                {pf.symbol && <span className="text-xs text-slate-500 shrink-0">{pf.symbol}</span>}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                {renamingId === pf.id ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); commitRename(pf.id); }}
+                    className="p-1 text-green-400 hover:text-green-300"
+                    title="Save name"
+                  >
+                    <Check size={13} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => startRename(e, pf)}
+                    className="p-1 text-slate-500 hover:text-slate-300"
+                    title="Rename portfolio"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                )}
                 <button
                   onClick={(e) => { e.stopPropagation(); onDelete(pf.id); }}
                   className="p-1 text-red-500/60 hover:text-red-400"
+                  title="Delete portfolio"
                 >
                   <Trash2 size={13} />
                 </button>
@@ -215,9 +274,23 @@ export default function PortfolioTracker({ portfolios, onDelete, onSelect, selec
 
 /* ── Detail view ────────────────────────────────────────── */
 
-function PortfolioDetail({ portfolio, onBack }) {
+function PortfolioDetail({ portfolio, onBack, onRename }) {
   const [tab, setTab] = useState('overview'); // 'overview' | 'trades' | 'equity'
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const renameRef = useRef(null);
   const metrics = calcMetrics(portfolio);
+
+  useEffect(() => {
+    if (renaming && renameRef.current) renameRef.current.focus();
+  }, [renaming]);
+
+  const startRename = () => { setRenaming(true); setRenameValue(portfolio.name); };
+  const commitRename = () => {
+    const trimmed = renameValue.trim();
+    if (trimmed && onRename) onRename(portfolio.id, trimmed);
+    setRenaming(false);
+  };
 
   return (
     <div>
@@ -229,25 +302,50 @@ function PortfolioDetail({ portfolio, onBack }) {
       </button>
 
       <div className="flex items-center gap-2 mb-3">
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+        <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
           portfolio.mode === 'backtest'
             ? 'bg-purple-500/20 text-purple-400'
             : 'bg-green-500/20 text-green-400'
         }`}>
           {portfolio.mode === 'backtest' ? 'BACKTEST' : 'FORWARD'}
         </span>
-        <h3 className="text-sm font-semibold text-slate-200">{portfolio.name}</h3>
+        {renaming ? (
+          <input
+            ref={renameRef}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename();
+              if (e.key === 'Escape') setRenaming(false);
+            }}
+            className="text-sm font-semibold bg-slate-800 border border-blue-500 rounded px-1.5 py-0.5 text-slate-200 w-48"
+          />
+        ) : (
+          <h3 className="text-sm font-semibold text-slate-200">{portfolio.name}</h3>
+        )}
         {portfolio.symbol && <span className="text-xs text-slate-500">{portfolio.symbol}</span>}
+        {renaming ? (
+          <button onClick={commitRename} className="p-0.5 text-green-400 hover:text-green-300" title="Save">
+            <Check size={13} />
+          </button>
+        ) : (
+          <button onClick={startRename} className="p-0.5 text-slate-500 hover:text-slate-300" title="Rename">
+            <Pencil size={13} />
+          </button>
+        )}
       </div>
 
       {/* Tab nav */}
-      <div className="flex gap-1 mb-3 border-b border-slate-800 pb-1">
+      <div className="flex gap-0 mb-3 border-b border-slate-800">
         {['overview', 'trades', 'equity'].map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-2.5 py-1 text-xs rounded-t ${
-              tab === t ? 'text-blue-400 bg-slate-800' : 'text-slate-500 hover:text-slate-300'
+            className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? 'text-blue-400 border-blue-500'
+                : 'text-slate-500 border-transparent hover:text-slate-300'
             }`}
           >
             {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -326,6 +424,7 @@ function TradesTab({ portfolio }) {
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-slate-900">
             <tr className="text-slate-500 text-left">
+              <th className="px-2 py-1">Ticker</th>
               <th className="px-2 py-1">Open</th>
               <th className="px-2 py-1">Close</th>
               <th className="px-2 py-1">Type</th>
@@ -349,6 +448,9 @@ function TradesTab({ portfolio }) {
                 : null;
               return (
                 <tr key={t.id} className="border-t border-slate-800/50 hover:bg-slate-800/30">
+                  <td className="px-2 py-1 font-mono font-semibold text-slate-300 whitespace-nowrap">
+                    {t.symbol || '—'}
+                  </td>
                   <td className="px-2 py-1 text-slate-300 whitespace-nowrap">{t.openedAt?.slice(0, 10) || '—'}</td>
                   <td className="px-2 py-1 text-slate-400 whitespace-nowrap">{t.closedAt?.slice(0, 10) || '—'}</td>
                   <td className="px-2 py-1">
