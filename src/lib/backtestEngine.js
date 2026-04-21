@@ -255,7 +255,8 @@ export function runBacktest({
         // Per-leg DTE: strategies like Calendar/PMCC set leg.dte on individual legs
         const legDte = leg.dte ?? dte;
         const legExpDate = addDays(date, legDte);
-        const legIv = applySkew(leg.iv || iv, leg.strike, executionSpot, skewSlope);
+        const barIv = bar.iv ?? iv; // use per-bar IV (e.g. from VIX) when available
+        const legIv = applySkew(leg.iv || barIv, leg.strike, executionSpot, skewSlope);
         const t = legDte / 365;
         const prices = bsmPrice(executionSpot, leg.strike, t, riskFreeRate, legIv, divYield);
         const midPrice = leg.type === 'call' ? prices.call : prices.put;

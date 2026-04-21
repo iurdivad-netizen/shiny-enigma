@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { Play, Loader, AlertTriangle, MousePointerClick, Zap, Plus, Trash2, Download } from 'lucide-react';
 import { STRATEGY_NAMES, runBacktest, runManualBacktest } from '../lib/backtestEngine.js';
-import { fetchDailyHistory, getStoredAvKey } from '../lib/alphaVantageApi.js';
+import { fetchDailyHistory, fetchDailyHistoryWithVix, getStoredAvKey } from '../lib/alphaVantageApi.js';
 import { bsmPrice } from '../lib/blackScholes.js';
 
 const fmtMoney = (n) => {
@@ -578,6 +578,8 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
   const [result, setResult] = useState(null);
   const [targetPortfolioId, setTargetPortfolioId] = useState(''); // '' = new portfolio
 
+  const sharedHasVix = useShared && sharedPriceData?.data?.some((b) => b.iv != null);
+
   const run = useCallback(async () => {
     setError('');
     setLoading(true);
@@ -590,9 +592,9 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
         const apiKey = getStoredAvKey();
         if (!apiKey) throw new Error('Alpha Vantage API key required. Set it in the Historical Data panel.');
         try {
-          priceData = await fetchDailyHistory(symbol, apiKey, 'full');
+          priceData = await fetchDailyHistoryWithVix(symbol, apiKey, 'full');
         } catch {
-          priceData = await fetchDailyHistory(symbol, apiKey, 'compact');
+          priceData = await fetchDailyHistoryWithVix(symbol, apiKey, 'compact');
         }
       }
       if (priceData.length < 30) throw new Error('Not enough historical data (need 30+ days).');
@@ -690,8 +692,21 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
           <input type="number" value={entryInterval} onChange={(e) => setEntryInterval(+e.target.value || 30)} className="px-2 py-1 rounded" min="1" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">ATM IV %</span>
-          <input type="number" value={iv} onChange={(e) => setIv(+e.target.value || 30)} className="px-2 py-1 rounded" min="1" max="200" />
+          <span className="text-slate-500 flex items-center gap-1">
+            ATM IV %
+            {sharedHasVix
+              ? <span className="text-emerald-400 font-medium">(using VIX)</span>
+              : <span className="text-slate-600">(VIX when fetched)</span>}
+          </span>
+          <input
+            type="number"
+            value={iv}
+            onChange={(e) => setIv(+e.target.value || 30)}
+            className={`px-2 py-1 rounded ${sharedHasVix ? 'opacity-40 cursor-not-allowed' : ''}`}
+            min="1" max="200"
+            disabled={sharedHasVix}
+            title={sharedHasVix ? 'Historical VIX data is being used from shared price data' : 'Fallback IV when VIX data is unavailable'}
+          />
         </label>
         <label className="flex flex-col gap-0.5">
           <span className="text-slate-500">Starting Capital $</span>
