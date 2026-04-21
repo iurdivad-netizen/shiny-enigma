@@ -468,6 +468,41 @@ export function parseHistoricalChainByStrike(optionsData, spotPrice) {
     }));
 }
 
+/* ── VIX-enriched daily history ──────────────────────────── */
+
+/**
+ * Fetch daily prices for `symbol` and, in parallel, VIX daily closes.
+ * Merges `iv = vixClose / 100` onto each bar where a matching VIX date exists.
+ * Falls back gracefully to plain price data if the VIX fetch fails.
+ *
+ * @param {string} symbol
+ * @param {string} apiKey
+ * @param {string} outputSize - 'compact' | 'full'
+ * @returns {Promise<Array>} priceData bars, each possibly with an `iv` field
+ */
+export async function fetchDailyHistoryWithVix(symbol, apiKey, outputSize = 'compact') {
+  const [priceData, vixResult] = await Promise.allSettled([
+    fetchDailyHistory(symbol, apiKey, outputSize),
+    fetchDailyHistory('VIX', apiKey, outputSize),
+  ]);
+
+  if (priceData.status === 'rejected') throw priceData.reason;
+
+  const bars = priceData.value;
+
+  if (vixResult.status === 'fulfilled' && vixResult.value.length > 0) {
+    const vixByDate = Object.fromEntries(vixResult.value.map((b) => [b.date, b.close]));
+    for (const bar of bars) {
+      const vixClose = vixByDate[bar.date];
+      if (vixClose != null && vixClose > 0) {
+        bar.iv = vixClose / 100;
+      }
+    }
+  }
+
+  return bars;
+}
+
 /* ── Data Export ──────────────────────────────────────────── */
 
 /**
