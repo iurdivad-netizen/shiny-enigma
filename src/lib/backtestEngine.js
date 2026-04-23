@@ -440,7 +440,7 @@ export function runManualBacktest({
         const t = daysLeft / 365;
         const prices = bsmPrice(exitBar.close, trade.strike, t, riskFreeRate, trade.iv, divYield);
         const exitPrice = trade.type === 'call' ? prices.call : prices.put;
-        portfolio = closeTrade(portfolio, trade.id, Math.round(exitPrice * 100) / 100, exitBar.date);
+        portfolio = closeTrade(portfolio, trade.id, Math.round(exitPrice * 100) / 100, exitBar.date, exitBar.close);
       }
     }
   } else {
@@ -561,19 +561,19 @@ function processOpenTrades(
 
     // Management DTE: close when time remaining hits threshold
     if (managementDte > 0 && daysLeft <= managementDte) {
-      updated = closeTrade(updated, trade.id, exitPrice, date);
+      updated = closeTrade(updated, trade.id, exitPrice, date, spot);
       continue;
     }
 
     // Stop loss
     if (stopLossPct > 0 && pnlPct <= -(stopLossPct / 100)) {
-      updated = closeTrade(updated, trade.id, exitPrice, date);
+      updated = closeTrade(updated, trade.id, exitPrice, date, spot);
       continue;
     }
 
     // Take profit
     if (takeProfitPct > 0 && pnlPct >= takeProfitPct / 100) {
-      updated = closeTrade(updated, trade.id, exitPrice, date);
+      updated = closeTrade(updated, trade.id, exitPrice, date, spot);
       continue;
     }
 
@@ -581,7 +581,7 @@ function processOpenTrades(
     if (trailingStopPct > 0 && (trade._maxPnlPct ?? -Infinity) > 0) {
       const dropFromPeak = (trade._maxPnlPct ?? 0) - pnlPct;
       if (dropFromPeak >= trailingStopPct / 100) {
-        updated = closeTrade(updated, trade.id, exitPrice, date);
+        updated = closeTrade(updated, trade.id, exitPrice, date, spot);
       }
     }
   }
