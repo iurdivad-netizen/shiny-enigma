@@ -14,6 +14,9 @@ import {
   toCSV, downloadFile,
 } from '../lib/alphaVantageApi.js';
 import AlphaVantageInfo from './AlphaVantageInfo.jsx';
+import StatCard from './ui/StatCard.jsx';
+import ErrorBox from './ui/ErrorBox.jsx';
+import { formatCurrency } from '../lib/format.js';
 
 /** Interval options for the selector */
 const INTERVALS = [
@@ -576,12 +579,8 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg, onDataLoad
 
       {/* Error / Warning */}
       {error && (
-        <div className={`flex items-center gap-2 text-xs mb-3 rounded px-3 py-2 ${
-          rawPriceData.length > 0
-            ? 'text-amber-400 bg-amber-900/20 border border-amber-800/50'
-            : 'text-red-400 bg-red-900/20 border border-red-800/50'
-        }`}>
-          <AlertCircle size={14} className="flex-shrink-0" /> {error}
+        <div className="mb-3">
+          <ErrorBox intent={rawPriceData.length > 0 ? 'warning' : 'error'}>{error}</ErrorBox>
         </div>
       )}
 
@@ -669,18 +668,21 @@ export default function HistoricalData({ onHistoricalQuote, onAddLeg, onDataLoad
           {/* Summary Stats */}
           {stats && (
             <div className="px-3 pb-3 grid grid-cols-5 gap-2">
-              {[
-                { label: 'Period High', value: `$${fmtNum(stats.high)}`, color: 'text-green-400' },
-                { label: 'Period Low', value: `$${fmtNum(stats.low)}`, color: 'text-red-400' },
-                { label: 'Start', value: `$${fmtNum(stats.earliest.close)}`, color: 'text-slate-300' },
-                { label: 'End', value: `$${fmtNum(stats.latest.close)}`, color: 'text-slate-300' },
-                { label: 'Avg Volume', value: stats.avgVolume.toLocaleString(), color: 'text-slate-400' },
-              ].map((s) => (
-                <div key={s.label} className="bg-slate-900/50 rounded px-2.5 py-1.5">
-                  <div className="text-[10px] text-slate-500 uppercase">{s.label}</div>
-                  <div className={`font-mono text-sm font-semibold ${s.color}`}>{s.value}</div>
-                </div>
-              ))}
+              <div className="bg-slate-900/50 rounded px-2.5 py-1.5">
+                <StatCard size="sm" label="Period High" value={formatCurrency(stats.high)} sign="positive" />
+              </div>
+              <div className="bg-slate-900/50 rounded px-2.5 py-1.5">
+                <StatCard size="sm" label="Period Low" value={formatCurrency(stats.low)} sign="negative" />
+              </div>
+              <div className="bg-slate-900/50 rounded px-2.5 py-1.5">
+                <StatCard size="sm" label="Start" value={formatCurrency(stats.earliest.close)} />
+              </div>
+              <div className="bg-slate-900/50 rounded px-2.5 py-1.5">
+                <StatCard size="sm" label="End" value={formatCurrency(stats.latest.close)} />
+              </div>
+              <div className="bg-slate-900/50 rounded px-2.5 py-1.5">
+                <StatCard size="sm" label="Avg Volume" value={stats.avgVolume.toLocaleString()} sign="muted" />
+              </div>
             </div>
           )}
         </div>

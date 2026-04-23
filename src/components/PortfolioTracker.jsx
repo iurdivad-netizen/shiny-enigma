@@ -3,18 +3,15 @@ import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { Trash2, X, TrendingUp, TrendingDown, Activity, Pencil, Check } from 'lucide-react';
-import { calcMetrics, portfolioPnl, portfolioGreeks } from '../lib/portfolio.js';
+import { Trash2, X, Pencil, Check, Briefcase, ArrowLeft } from 'lucide-react';
+import { calcMetrics } from '../lib/portfolio.js';
+import Button from './ui/Button.jsx';
+import StatCard from './ui/StatCard.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import ConfirmButton from './ui/ConfirmButton.jsx';
+import { formatCurrency, formatPercent } from '../lib/format.js';
 
-const fmtMoney = (n) => {
-  if (n == null || isNaN(n)) return '$0.00';
-  const sign = n < 0 ? '-' : '';
-  return `${sign}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
-
-const fmtPct = (n) => `${(n * 100).toFixed(1)}%`;
-
-export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, onRename, onSelect, selectedId }) {
+export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, onRename, selectedId }) {
   const [detailId, setDetailId] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
@@ -37,7 +34,6 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
     setRenamingId(null);
   };
 
-  // Aggregate metrics across all portfolios in this view
   const aggregate = useMemo(() => {
     if (portfolios.length === 0) return null;
     const allMetrics = portfolios.map((pf) => calcMetrics(pf));
@@ -51,16 +47,13 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
     const grossLoss = allMetrics.reduce((s, m) => s + m.avgLoss * m.losers, 0);
     const profitFactor = grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? Infinity : 0;
 
-    // Worst drawdown across portfolios
     const maxDrawdown = Math.max(0, ...allMetrics.map((m) => m.maxDrawdown));
 
-    // Best and worst portfolios
     const sorted = [...portfolios].map((pf, i) => ({ pf, pnl: allMetrics[i].totalPnl }));
     sorted.sort((a, b) => b.pnl - a.pnl);
     const best = sorted[0];
     const worst = sorted[sorted.length - 1];
 
-    // Total starting capital and ending value
     const totalCapital = portfolios.reduce((s, pf) => s + pf.config.startingCapital, 0);
     const totalEnding = portfolios.reduce((s, pf) => {
       const lastSnap = pf.snapshots[pf.snapshots.length - 1];
@@ -79,64 +72,45 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
     return <PortfolioDetail portfolio={detail} onBack={() => setDetailId(null)} onRename={onRename} onDeleteTrade={onDeleteTrade} />;
   }
 
+  const signFor = (n) => (n > 0 ? 'positive' : n < 0 ? 'negative' : 'neutral');
+
   return (
     <div className="space-y-3">
       {portfolios.length === 0 && (
-        <div className="text-center py-8 text-slate-500 text-sm">
-          No portfolios yet. Run a backtest or start forward testing to create one.
-        </div>
+        <EmptyState
+          icon={Briefcase}
+          title="No portfolios yet"
+          helper="Run a backtest or start forward testing to create one."
+        />
       )}
 
-      {/* ── Aggregate Summary ────────────────────────── */}
+      {/* Aggregate Summary */}
       {aggregate && (
         <div className="bg-[#111827] rounded-lg border border-slate-800 p-4">
           <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-3">
             Summary — {aggregate.count} Portfolio{aggregate.count !== 1 ? 's' : ''}
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-            <div>
-              <div className="text-[10px] text-slate-500">Total P&L</div>
-              <div className={`text-sm font-mono font-semibold ${aggregate.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {fmtMoney(aggregate.totalPnl)}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-500">Return</div>
-              <div className={`text-sm font-mono font-semibold ${aggregate.returnPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {aggregate.returnPct >= 0 ? '+' : ''}{fmtPct(aggregate.returnPct)}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-500">Win Rate</div>
-              <div className="text-sm font-mono font-semibold text-slate-200">{fmtPct(aggregate.winRate)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-500">Total Trades</div>
-              <div className="text-sm font-mono font-semibold text-slate-200">{aggregate.totalTrades}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-500">Profit Factor</div>
-              <div className="text-sm font-mono font-semibold text-slate-200">
-                {aggregate.profitFactor === Infinity ? '∞' : aggregate.profitFactor.toFixed(2)}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-500">Max Drawdown</div>
-              <div className="text-sm font-mono font-semibold text-red-400">{fmtPct(aggregate.maxDrawdown)}</div>
-            </div>
+            <StatCard label="Total P&L" value={formatCurrency(aggregate.totalPnl)} sign={signFor(aggregate.totalPnl)} />
+            <StatCard
+              label="Return"
+              value={`${aggregate.returnPct >= 0 ? '+' : ''}${formatPercent(aggregate.returnPct)}`}
+              sign={signFor(aggregate.returnPct)}
+            />
+            <StatCard label="Win Rate" value={formatPercent(aggregate.winRate)} />
+            <StatCard label="Total Trades" value={aggregate.totalTrades} />
+            <StatCard
+              label="Profit Factor"
+              value={aggregate.profitFactor === Infinity ? '∞' : aggregate.profitFactor.toFixed(2)}
+            />
+            <StatCard label="Max Drawdown" value={formatPercent(aggregate.maxDrawdown)} sign="negative" />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-800">
+            <StatCard size="sm" label="Total Capital" value={formatCurrency(aggregate.totalCapital)} />
+            <StatCard size="sm" label="Ending Value" value={formatCurrency(aggregate.totalEnding)} />
             <div>
-              <div className="text-[10px] text-slate-500">Total Capital</div>
-              <div className="text-xs font-mono text-slate-300">{fmtMoney(aggregate.totalCapital)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-500">Ending Value</div>
-              <div className="text-xs font-mono text-slate-300">{fmtMoney(aggregate.totalEnding)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-500">W / L</div>
-              <div className="text-xs font-mono">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider">W / L</div>
+              <div className="text-sm font-mono font-semibold">
                 <span className="text-green-400">{aggregate.totalWinners}</span>
                 <span className="text-slate-600"> / </span>
                 <span className="text-red-400">{aggregate.totalLosers}</span>
@@ -144,11 +118,11 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
             </div>
             {aggregate.count > 1 && (
               <div>
-                <div className="text-[10px] text-slate-500">Best / Worst</div>
-                <div className="text-xs font-mono">
-                  <span className="text-green-400">{fmtMoney(aggregate.best.pnl)}</span>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider">Best / Worst</div>
+                <div className="text-sm font-mono font-semibold">
+                  <span className="text-green-400">{formatCurrency(aggregate.best.pnl)}</span>
                   <span className="text-slate-600"> / </span>
-                  <span className="text-red-400">{fmtMoney(aggregate.worst.pnl)}</span>
+                  <span className="text-red-400">{formatCurrency(aggregate.worst.pnl)}</span>
                 </div>
               </div>
             )}
@@ -158,7 +132,6 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
 
       {portfolios.map((pf) => {
         const metrics = calcMetrics(pf);
-        const lastSnap = pf.snapshots[pf.snapshots.length - 1];
         return (
           <div
             key={pf.id}
@@ -174,7 +147,7 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
                 <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                   pf.mode === 'backtest'
                     ? 'bg-purple-500/20 text-purple-400'
-                    : 'bg-green-500/20 text-green-400'
+                    : 'bg-emerald-500/20 text-emerald-400'
                 }`}>
                   {pf.mode === 'backtest' ? 'BACKTEST' : 'FORWARD'}
                 </span>
@@ -191,69 +164,59 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
                     }}
                     onClick={(e) => e.stopPropagation()}
                     className="text-sm font-medium bg-slate-800 border border-blue-500 rounded px-1.5 py-0.5 text-slate-200 w-40 min-w-0"
+                    aria-label="Portfolio name"
                   />
                 ) : (
                   <span className="text-sm font-medium text-slate-200 truncate">{pf.name}</span>
                 )}
                 {pf.symbol && <span className="text-xs text-slate-500 shrink-0">{pf.symbol}</span>}
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                 {renamingId === pf.id ? (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); commitRename(pf.id); }}
-                    className="p-1 text-green-400 hover:text-green-300"
-                    title="Save name"
-                  >
-                    <Check size={13} />
-                  </button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    iconOnly
+                    icon={Check}
+                    aria-label="Save name"
+                    onClick={() => commitRename(pf.id)}
+                    className="!text-green-400 hover:!text-green-300"
+                  />
                 ) : (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    iconOnly
+                    icon={Pencil}
+                    aria-label="Rename portfolio"
                     onClick={(e) => startRename(e, pf)}
-                    className="p-1 text-slate-500 hover:text-slate-300"
-                    title="Rename portfolio"
-                  >
-                    <Pencil size={13} />
-                  </button>
+                    className="!text-slate-500 hover:!text-slate-300"
+                  />
                 )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDelete(pf.id); }}
-                  className="p-1 text-red-500/60 hover:text-red-400"
-                  title="Delete portfolio"
-                >
-                  <Trash2 size={13} />
-                </button>
+                <ConfirmButton
+                  onConfirm={() => onDelete(pf.id)}
+                  ariaLabel={`Delete portfolio ${pf.name}`}
+                  confirmLabel="Delete"
+                />
               </div>
             </div>
             <div className="grid grid-cols-4 gap-3 text-xs">
-              <div>
-                <div className="text-slate-500">Total P&L</div>
-                <div className={`font-mono font-semibold ${metrics.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {fmtMoney(metrics.totalPnl)}
-                </div>
-              </div>
-              <div>
-                <div className="text-slate-500">Win Rate</div>
-                <div className="font-mono text-slate-200">{fmtPct(metrics.winRate)}</div>
-              </div>
-              <div>
-                <div className="text-slate-500">Trades</div>
-                <div className="font-mono text-slate-200">{metrics.totalTrades}</div>
-              </div>
-              <div>
-                <div className="text-slate-500">Profit Factor</div>
-                <div className="font-mono text-slate-200">
-                  {metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)}
-                </div>
-              </div>
+              <StatCard size="sm" label="Total P&L" value={formatCurrency(metrics.totalPnl)} sign={signFor(metrics.totalPnl)} />
+              <StatCard size="sm" label="Win Rate" value={formatPercent(metrics.winRate)} />
+              <StatCard size="sm" label="Trades" value={metrics.totalTrades} />
+              <StatCard
+                size="sm"
+                label="Profit Factor"
+                value={metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)}
+              />
             </div>
-            {/* Mini equity curve */}
             {pf.snapshots.length > 1 && (
-              <div className="mt-2 h-12">
+              <div className="mt-2 h-12" aria-hidden="true">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={pf.snapshots}>
                     <Line
                       type="monotone" dataKey="totalValue" stroke="#60a5fa"
-                      dot={false} strokeWidth={1.5}
+                      dot={false} strokeWidth={1.5} isAnimationActive={false}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -269,7 +232,7 @@ export default function PortfolioTracker({ portfolios, onDelete, onDeleteTrade, 
 /* ── Detail view ────────────────────────────────────────── */
 
 function PortfolioDetail({ portfolio, onBack, onRename, onDeleteTrade }) {
-  const [tab, setTab] = useState('overview'); // 'overview' | 'trades' | 'equity'
+  const [tab, setTab] = useState('overview');
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const renameRef = useRef(null);
@@ -288,18 +251,15 @@ function PortfolioDetail({ portfolio, onBack, onRename, onDeleteTrade }) {
 
   return (
     <div>
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 mb-3"
-      >
-        <X size={13} /> Back to portfolios
-      </button>
+      <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} className="mb-3">
+        Back to portfolios
+      </Button>
 
       <div className="flex items-center gap-2 mb-3">
         <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
           portfolio.mode === 'backtest'
             ? 'bg-purple-500/20 text-purple-400'
-            : 'bg-green-500/20 text-green-400'
+            : 'bg-emerald-500/20 text-emerald-400'
         }`}>
           {portfolio.mode === 'backtest' ? 'BACKTEST' : 'FORWARD'}
         </span>
@@ -314,29 +274,32 @@ function PortfolioDetail({ portfolio, onBack, onRename, onDeleteTrade }) {
               if (e.key === 'Escape') setRenaming(false);
             }}
             className="text-sm font-semibold bg-slate-800 border border-blue-500 rounded px-1.5 py-0.5 text-slate-200 w-48"
+            aria-label="Portfolio name"
           />
         ) : (
           <h3 className="text-sm font-semibold text-slate-200">{portfolio.name}</h3>
         )}
         {portfolio.symbol && <span className="text-xs text-slate-500">{portfolio.symbol}</span>}
         {renaming ? (
-          <button onClick={commitRename} className="p-0.5 text-green-400 hover:text-green-300" title="Save">
-            <Check size={13} />
-          </button>
+          <Button variant="ghost" size="xs" iconOnly icon={Check} aria-label="Save name" onClick={commitRename}
+            className="!text-green-400 hover:!text-green-300" />
         ) : (
-          <button onClick={startRename} className="p-0.5 text-slate-500 hover:text-slate-300" title="Rename">
-            <Pencil size={13} />
-          </button>
+          <Button variant="ghost" size="xs" iconOnly icon={Pencil} aria-label="Rename portfolio" onClick={startRename}
+            className="!text-slate-500 hover:!text-slate-300" />
         )}
       </div>
 
       {/* Tab nav */}
-      <div className="flex gap-0 mb-3 border-b border-slate-800">
+      <div className="flex gap-0 mb-3 border-b border-slate-800" role="tablist" aria-label="Portfolio views">
         {['overview', 'trades', 'equity'].map((t) => (
           <button
             key={t}
+            role="tab"
+            aria-selected={tab === t}
+            aria-controls={`portfolio-panel-${t}`}
+            id={`portfolio-tab-${t}`}
             onClick={() => setTab(t)}
-            className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+            className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors focus-visible:outline-none focus-visible:text-blue-400 ${
               tab === t
                 ? 'text-blue-400 border-blue-500'
                 : 'text-slate-500 border-transparent hover:text-slate-300'
@@ -347,43 +310,45 @@ function PortfolioDetail({ portfolio, onBack, onRename, onDeleteTrade }) {
         ))}
       </div>
 
-      {tab === 'overview' && <OverviewTab metrics={metrics} portfolio={portfolio} />}
-      {tab === 'trades' && <TradesTab portfolio={portfolio} onDeleteTrade={onDeleteTrade} />}
-      {tab === 'equity' && <EquityTab portfolio={portfolio} />}
+      <div
+        role="tabpanel"
+        id={`portfolio-panel-${tab}`}
+        aria-labelledby={`portfolio-tab-${tab}`}
+      >
+        {tab === 'overview' && <OverviewTab metrics={metrics} portfolio={portfolio} />}
+        {tab === 'trades' && <TradesTab portfolio={portfolio} onDeleteTrade={onDeleteTrade} />}
+        {tab === 'equity' && <EquityTab portfolio={portfolio} />}
+      </div>
     </div>
   );
 }
 
 function OverviewTab({ metrics, portfolio }) {
+  const signFor = (n) => (n > 0 ? 'positive' : n < 0 ? 'negative' : 'neutral');
+  const endingValue = portfolio.snapshots.length > 0
+    ? portfolio.snapshots[portfolio.snapshots.length - 1].totalValue
+    : portfolio.config.startingCapital;
+
   const stats = [
-    { label: 'Total P&L', value: fmtMoney(metrics.totalPnl), color: metrics.totalPnl >= 0 ? 'text-green-400' : 'text-red-400' },
-    { label: 'Win Rate', value: fmtPct(metrics.winRate), color: 'text-slate-200' },
-    { label: 'Winners', value: metrics.winners, color: 'text-green-400' },
-    { label: 'Losers', value: metrics.losers, color: 'text-red-400' },
-    { label: 'Avg Win', value: fmtMoney(metrics.avgWin), color: 'text-green-400' },
-    { label: 'Avg Loss', value: fmtMoney(metrics.avgLoss), color: 'text-red-400' },
-    { label: 'Profit Factor', value: metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2), color: 'text-slate-200' },
-    { label: 'Max Drawdown', value: fmtPct(metrics.maxDrawdown), color: 'text-red-400' },
-    { label: 'Sharpe Ratio', value: metrics.sharpe.toFixed(2), color: 'text-slate-200' },
-    { label: 'Total Trades', value: metrics.totalTrades, color: 'text-slate-200' },
-    { label: 'Starting Capital', value: fmtMoney(portfolio.config.startingCapital), color: 'text-slate-200' },
-    {
-      label: 'Ending Value',
-      value: fmtMoney(
-        portfolio.snapshots.length > 0
-          ? portfolio.snapshots[portfolio.snapshots.length - 1].totalValue
-          : portfolio.config.startingCapital
-      ),
-      color: 'text-slate-200',
-    },
+    { label: 'Total P&L', value: formatCurrency(metrics.totalPnl), sign: signFor(metrics.totalPnl) },
+    { label: 'Win Rate', value: formatPercent(metrics.winRate), sign: 'neutral' },
+    { label: 'Winners', value: metrics.winners, sign: 'positive' },
+    { label: 'Losers', value: metrics.losers, sign: 'negative' },
+    { label: 'Avg Win', value: formatCurrency(metrics.avgWin), sign: 'positive' },
+    { label: 'Avg Loss', value: formatCurrency(metrics.avgLoss), sign: 'negative' },
+    { label: 'Profit Factor', value: metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2), sign: 'neutral' },
+    { label: 'Max Drawdown', value: formatPercent(metrics.maxDrawdown), sign: 'negative' },
+    { label: 'Sharpe Ratio', value: metrics.sharpe.toFixed(2), sign: 'neutral' },
+    { label: 'Total Trades', value: metrics.totalTrades, sign: 'neutral' },
+    { label: 'Starting Capital', value: formatCurrency(portfolio.config.startingCapital), sign: 'neutral' },
+    { label: 'Ending Value', value: formatCurrency(endingValue), sign: 'neutral' },
   ];
 
   return (
     <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
       {stats.map((s) => (
         <div key={s.label} className="bg-slate-800/50 rounded p-2">
-          <div className="text-[10px] text-slate-500 uppercase">{s.label}</div>
-          <div className={`text-sm font-mono font-semibold ${s.color}`}>{s.value}</div>
+          <StatCard label={s.label} value={s.value} sign={s.sign} />
         </div>
       ))}
     </div>
@@ -391,8 +356,7 @@ function OverviewTab({ metrics, portfolio }) {
 }
 
 function TradesTab({ portfolio, onDeleteTrade }) {
-  const [filter, setFilter] = useState('all'); // 'all' | 'open' | 'closed'
-  const [confirmId, setConfirmId] = useState(null);
+  const [filter, setFilter] = useState('all');
   const trades = portfolio.trades.filter((t) => {
     if (filter === 'open') return t.status === 'open';
     if (filter === 'closed') return t.status !== 'open';
@@ -401,12 +365,13 @@ function TradesTab({ portfolio, onDeleteTrade }) {
 
   return (
     <div>
-      <div className="flex gap-1 mb-2">
+      <div className="flex gap-1 mb-2" role="group" aria-label="Filter trades by status">
         {['all', 'open', 'closed'].map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-2 py-0.5 text-[10px] rounded ${
+            aria-pressed={filter === f}
+            className={`px-2 py-0.5 text-[10px] rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
               filter === f ? 'bg-slate-700 text-slate-200' : 'text-slate-500 hover:text-slate-300'
             }`}
           >
@@ -415,25 +380,25 @@ function TradesTab({ portfolio, onDeleteTrade }) {
         ))}
         <span className="text-[10px] text-slate-600 ml-auto">{trades.length} trades</span>
       </div>
-      <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+      <div className="overflow-x-auto max-h-[320px] overflow-y-auto rounded-lg border border-slate-800">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-slate-900">
-            <tr className="text-slate-500 text-left">
-              <th className="px-2 py-1">Ticker</th>
-              <th className="px-2 py-1">Open</th>
-              <th className="px-2 py-1">Close</th>
-              <th className="px-2 py-1">Type</th>
-              <th className="px-2 py-1">Dir</th>
-              <th className="px-2 py-1 text-right">Strike</th>
-              <th className="px-2 py-1 text-right">Spot@Entry</th>
-              <th className="px-2 py-1 text-right">Entry $</th>
-              <th className="px-2 py-1 text-right">Exit $</th>
-              <th className="px-2 py-1 text-right">IV</th>
-              <th className="px-2 py-1 text-right">Qty</th>
-              <th className="px-2 py-1">Expiry</th>
-              <th className="px-2 py-1 text-right">P&L</th>
-              <th className="px-2 py-1">Status</th>
-              {onDeleteTrade && <th className="px-2 py-1"></th>}
+          <thead>
+            <tr className="text-slate-500 text-left bg-slate-900">
+              <th className="px-2 py-1.5 sticky-th">Ticker</th>
+              <th className="px-2 py-1.5 sticky-th">Open</th>
+              <th className="px-2 py-1.5 sticky-th">Close</th>
+              <th className="px-2 py-1.5 sticky-th">Type</th>
+              <th className="px-2 py-1.5 sticky-th">Dir</th>
+              <th className="px-2 py-1.5 text-right sticky-th">Strike</th>
+              <th className="px-2 py-1.5 text-right sticky-th">Spot@Entry</th>
+              <th className="px-2 py-1.5 text-right sticky-th">Entry $</th>
+              <th className="px-2 py-1.5 text-right sticky-th">Exit $</th>
+              <th className="px-2 py-1.5 text-right sticky-th">IV</th>
+              <th className="px-2 py-1.5 text-right sticky-th">Qty</th>
+              <th className="px-2 py-1.5 sticky-th">Expiry</th>
+              <th className="px-2 py-1.5 text-right sticky-th">P&L</th>
+              <th className="px-2 py-1.5 sticky-th">Status</th>
+              {onDeleteTrade && <th className="px-2 py-1.5 sticky-th"></th>}
             </tr>
           </thead>
           <tbody>
@@ -444,40 +409,40 @@ function TradesTab({ portfolio, onDeleteTrade }) {
                 : null;
               return (
                 <tr key={t.id} className="border-t border-slate-800/50 hover:bg-slate-800/30">
-                  <td className="px-2 py-1 font-mono font-semibold text-slate-300 whitespace-nowrap">
+                  <td className="px-2 py-1.5 font-mono font-semibold text-slate-300 whitespace-nowrap">
                     {t.symbol || '—'}
                   </td>
-                  <td className="px-2 py-1 text-slate-300 whitespace-nowrap">{t.openedAt?.slice(0, 10) || '—'}</td>
-                  <td className="px-2 py-1 text-slate-400 whitespace-nowrap">{t.closedAt?.slice(0, 10) || '—'}</td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1.5 text-slate-300 whitespace-nowrap">{t.openedAt?.slice(0, 10) || '—'}</td>
+                  <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">{t.closedAt?.slice(0, 10) || '—'}</td>
+                  <td className="px-2 py-1.5">
                     <span className={t.type === 'call' ? 'text-blue-400' : 'text-pink-400'}>
                       {t.type.toUpperCase()}
                     </span>
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1.5">
                     <span className={t.direction === 'long' ? 'text-green-400' : 'text-red-400'}>
                       {t.direction.toUpperCase()}
                     </span>
                   </td>
-                  <td className="px-2 py-1 text-right font-mono">${t.strike}</td>
-                  <td className="px-2 py-1 text-right font-mono text-slate-300">
-                    {t.underlyingPrice != null ? `$${Number(t.underlyingPrice).toFixed(2)}` : '—'}
+                  <td className="px-2 py-1.5 text-right font-mono">${t.strike}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-slate-300">
+                    {t.underlyingPrice != null ? formatCurrency(t.underlyingPrice) : '—'}
                   </td>
-                  <td className="px-2 py-1 text-right font-mono">${t.premium.toFixed(2)}</td>
-                  <td className="px-2 py-1 text-right font-mono">
-                    {t.closePrice != null ? `$${t.closePrice.toFixed(2)}` : '—'}
+                  <td className="px-2 py-1.5 text-right font-mono">{formatCurrency(t.premium)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono">
+                    {t.closePrice != null ? formatCurrency(t.closePrice) : '—'}
                   </td>
-                  <td className="px-2 py-1 text-right font-mono text-slate-400">
+                  <td className="px-2 py-1.5 text-right font-mono text-slate-400">
                     {t.iv != null ? `${(t.iv * 100).toFixed(0)}%` : '—'}
                   </td>
-                  <td className="px-2 py-1 text-right font-mono">{t.quantity}</td>
-                  <td className="px-2 py-1 text-slate-400 whitespace-nowrap">{t.expiration?.slice(0, 10) || '—'}</td>
-                  <td className={`px-2 py-1 text-right font-mono font-semibold ${
+                  <td className="px-2 py-1.5 text-right font-mono">{t.quantity}</td>
+                  <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">{t.expiration?.slice(0, 10) || '—'}</td>
+                  <td className={`px-2 py-1.5 text-right font-mono font-semibold ${
                     pnl != null ? (pnl >= 0 ? 'text-green-400' : 'text-red-400') : 'text-slate-600'
                   }`}>
-                    {pnl != null ? fmtMoney(pnl) : '—'}
+                    {pnl != null ? formatCurrency(pnl) : '—'}
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1.5">
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                       t.status === 'open'
                         ? 'bg-blue-500/20 text-blue-400'
@@ -489,28 +454,12 @@ function TradesTab({ portfolio, onDeleteTrade }) {
                     </span>
                   </td>
                   {onDeleteTrade && (
-                    <td className="px-2 py-1">
-                      {confirmId === t.id ? (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => { onDeleteTrade(portfolio.id, t.id); setConfirmId(null); }}
-                            className="px-1.5 py-0.5 text-[10px] bg-red-600/80 hover:bg-red-500 rounded text-white"
-                          >
-                            Del
-                          </button>
-                          <button onClick={() => setConfirmId(null)} className="text-slate-500 hover:text-slate-300">
-                            <X size={11} />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setConfirmId(t.id)}
-                          className="p-0.5 text-red-500/40 hover:text-red-400"
-                          title="Delete trade"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      )}
+                    <td className="px-2 py-1.5">
+                      <ConfirmButton
+                        onConfirm={() => onDeleteTrade(portfolio.id, t.id)}
+                        ariaLabel="Delete trade"
+                        confirmLabel="Del"
+                      />
                     </td>
                   )}
                 </tr>
@@ -525,16 +474,25 @@ function TradesTab({ portfolio, onDeleteTrade }) {
 
 function EquityTab({ portfolio }) {
   if (portfolio.snapshots.length < 2) {
-    return <div className="text-center py-6 text-slate-500 text-sm">Not enough data for equity curve.</div>;
+    return (
+      <EmptyState
+        title="Not enough data for equity curve"
+        helper="Take at least two snapshots (or run a full backtest) to see the equity curve here."
+        size="sm"
+      />
+    );
   }
 
-  // Thin out snapshots if too many (keep max ~200 points)
   const snaps = portfolio.snapshots;
   const step = Math.max(1, Math.floor(snaps.length / 200));
   const data = snaps.filter((_, i) => i % step === 0 || i === snaps.length - 1);
 
   return (
     <div>
+      <div className="flex items-center gap-3 mb-1 text-[10px] text-slate-500">
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-0.5 bg-[#60a5fa]" /> Portfolio value</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-px bg-[#475569] border-t border-dashed border-[#475569]" /> Starting capital</span>
+      </div>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data}>
@@ -547,20 +505,19 @@ function EquityTab({ portfolio }) {
             <Tooltip
               contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 11 }}
               labelStyle={{ color: '#94a3b8' }}
-              formatter={(v) => [`$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, 'Portfolio Value']}
+              formatter={(v) => [formatCurrency(v, { decimals: 0 }), 'Portfolio Value']}
             />
             <ReferenceLine y={portfolio.config.startingCapital} stroke="#475569" strokeDasharray="4 4" />
             <Area
               type="monotone" dataKey="totalValue" stroke="#60a5fa" fill="#60a5fa"
-              fillOpacity={0.1} strokeWidth={1.5}
+              fillOpacity={0.1} strokeWidth={1.5} isAnimationActive={false}
             />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Spot price overlay */}
       <div className="h-28 mt-2">
-        <div className="text-[10px] text-slate-500 mb-1">Underlying Price</div>
+        <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Underlying Price</div>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -568,9 +525,9 @@ function EquityTab({ portfolio }) {
             <YAxis tick={{ fontSize: 10, fill: '#64748b' }} domain={['auto', 'auto']} />
             <Tooltip
               contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 11 }}
-              formatter={(v) => [`$${v?.toFixed(2)}`, 'Spot']}
+              formatter={(v) => [formatCurrency(v), 'Spot']}
             />
-            <Line type="monotone" dataKey="spotPrice" stroke="#f59e0b" dot={false} strokeWidth={1} />
+            <Line type="monotone" dataKey="spotPrice" stroke="#f59e0b" dot={false} strokeWidth={1} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
