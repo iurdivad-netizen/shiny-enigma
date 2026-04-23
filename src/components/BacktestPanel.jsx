@@ -3,15 +3,17 @@ import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts';
-import { Play, Loader, AlertTriangle, MousePointerClick, Zap, Plus, Trash2, Download } from 'lucide-react';
+import { Play, MousePointerClick, Zap, Plus, Download, Inbox } from 'lucide-react';
 import { STRATEGY_NAMES, runBacktest, runManualBacktest } from '../lib/backtestEngine.js';
 import { fetchDailyHistory, fetchDailyHistoryWithVix, getStoredAvKey } from '../lib/alphaVantageApi.js';
 import { bsmPrice } from '../lib/blackScholes.js';
-
-const fmtMoney = (n) => {
-  const sign = n < 0 ? '-' : '';
-  return `${sign}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
+import Button from './ui/Button.jsx';
+import StatCard from './ui/StatCard.jsx';
+import ErrorBox from './ui/ErrorBox.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import ConfirmButton from './ui/ConfirmButton.jsx';
+import { formatCurrency } from '../lib/format.js';
+import { useToast } from './ui/Toast.jsx';
 
 export default function BacktestPanel({ onResult, onUpdate, currentLegs, underlyingPrice, sharedPriceData, backtestPortfolios }) {
   const [mode, setMode] = useState('manual'); // 'manual' | 'auto'
@@ -19,23 +21,27 @@ export default function BacktestPanel({ onResult, onUpdate, currentLegs, underly
   return (
     <div className="space-y-3">
       {/* Mode toggle */}
-      <div className="flex gap-1 mb-1">
+      <div className="flex gap-1 mb-1" role="tablist" aria-label="Backtest mode">
         <button
+          role="tab"
+          aria-selected={mode === 'manual'}
           onClick={() => setMode('manual')}
-          className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded font-medium border ${
+          className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
             mode === 'manual'
               ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-              : 'border-slate-700 text-slate-500 hover:text-slate-300'
+              : 'border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600'
           }`}
         >
           <MousePointerClick size={13} /> Manual Backtest
         </button>
         <button
+          role="tab"
+          aria-selected={mode === 'auto'}
           onClick={() => setMode('auto')}
-          className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded font-medium border ${
+          className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
             mode === 'auto'
               ? 'bg-purple-600/20 border-purple-500 text-purple-400'
-              : 'border-slate-700 text-slate-500 hover:text-slate-300'
+              : 'border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600'
           }`}
         >
           <Zap size={13} /> Automated Backtest
@@ -56,6 +62,7 @@ export default function BacktestPanel({ onResult, onUpdate, currentLegs, underly
    ══════════════════════════════════════════════════════════ */
 
 function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, sharedPriceData, backtestPortfolios }) {
+  const toast = useToast();
   const [symbol, setSymbol] = useState('SPY');
   const [dte, setDte] = useState(30);
   const [capital, setCapital] = useState(10000);
@@ -262,15 +269,17 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
       setResult(res);
       if (existingPortfolio) {
         onUpdate(res.portfolio);
+        toast.show(`Appended to "${existingPortfolio.name}"`, { intent: 'success' });
       } else {
         onResult(res.portfolio);
+        toast.show('Backtest complete — portfolio saved', { intent: 'success' });
       }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [legs, legsWithEntryPremiums, priceData, symbol, entryDate, exitDate, dte, riskFreeRate, divYield, capital, commission, onResult, onUpdate, targetPortfolioId, backtestPortfolios]);
+  }, [legs, legsWithEntryPremiums, priceData, symbol, entryDate, exitDate, dte, riskFreeRate, divYield, capital, commission, onResult, onUpdate, targetPortfolioId, backtestPortfolios, toast]);
 
   // Thin data for chart
   const chartData = useMemo(() => {
@@ -288,19 +297,21 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
       {/* Symbol + Load */}
       <div className="flex items-end gap-2 text-xs flex-wrap">
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Symbol</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Symbol</span>
           <input
             type="text" value={symbol}
             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
             className="px-2 py-1 rounded w-24" placeholder="SPY"
+            aria-label="Ticker symbol"
           />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">History Range</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">History Range</span>
           <select
             value={historyRange}
             onChange={(e) => setHistoryRange(e.target.value)}
             className="px-2 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700"
+            aria-label="History range"
           >
             <option value="30d">30 Days</option>
             <option value="90d">90 Days</option>
@@ -312,22 +323,18 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
             <option value="all">All Data (20y+)</option>
           </select>
         </label>
-        <button
-          onClick={loadData}
-          disabled={loadingData}
-          className="flex items-center gap-1 px-3 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded font-medium"
-        >
-          {loadingData ? <Loader size={12} className="animate-spin" /> : null}
+        <Button variant="secondary" size="md" onClick={loadData} loading={loadingData}>
           {loadingData ? 'Loading...' : 'Load History'}
-        </button>
+        </Button>
         {sharedPriceData?.data?.length > 0 && (
-          <button
+          <Button
+            variant="success"
+            size="md"
             onClick={useSharedData}
-            className="flex items-center gap-1 px-3 py-1 bg-emerald-700/30 hover:bg-emerald-700/50 border border-emerald-600/40 text-emerald-400 rounded font-medium"
             title={`Use ${sharedPriceData.symbol} data already loaded in the Historical Data panel (${sharedPriceData.data.length} pts)`}
           >
             Use {sharedPriceData.symbol} ({sharedPriceData.data.length} pts)
-          </button>
+          </Button>
         )}
         {priceData.length > 0 && (
           <span className={`text-[10px] self-end pb-1 ${usingShared ? 'text-emerald-500' : 'text-slate-500'}`}>
@@ -335,19 +342,19 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
           </span>
         )}
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">DTE</span>
-          <input type="number" value={dte} onChange={(e) => setDte(+e.target.value || 30)} className="px-2 py-1 rounded w-16" min="1" />
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">DTE (days)</span>
+          <input type="number" value={dte} onChange={(e) => setDte(+e.target.value || 30)} className="px-2 py-1 rounded w-16" min="1" step="1" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Capital $</span>
-          <input type="number" value={capital} onChange={(e) => setCapital(+e.target.value || 10000)} className="px-2 py-1 rounded w-24" min="100" />
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Capital $</span>
+          <input type="number" value={capital} onChange={(e) => setCapital(+e.target.value || 10000)} className="px-2 py-1 rounded w-24" min="100" step="100" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Rate %</span>
-          <input type="number" value={riskFreeRate} onChange={(e) => setRiskFreeRate(+e.target.value || 0)} className="px-2 py-1 rounded w-16" step="0.5" />
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Rate %</span>
+          <input type="number" value={riskFreeRate} onChange={(e) => setRiskFreeRate(+e.target.value || 0)} className="px-2 py-1 rounded w-16" step="0.5" min="0" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Div Yield %</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Div Yield %</span>
           <input type="number" value={divYield} onChange={(e) => setDivYield(+e.target.value || 0)} className="px-2 py-1 rounded w-16" step="0.1" min="0" />
         </label>
       </div>
@@ -431,84 +438,92 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
       {priceData.length > 0 && (
         <div className="border border-slate-700 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-slate-400">Trade Legs</div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Trade Legs</div>
             <div className="flex gap-1">
               {currentLegs && currentLegs.length > 0 && (
-                <button
+                <Button
+                  variant="secondary"
+                  size="xs"
                   onClick={importLegs}
-                  className="px-2 py-0.5 text-[10px] bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 rounded"
+                  className="!bg-blue-600/20 !text-blue-400 !border-blue-500/30 hover:!bg-blue-600/30"
                 >
                   Import from Simulator ({currentLegs.length})
-                </button>
+                </Button>
               )}
-              <button
-                onClick={addLeg}
-                className="flex items-center gap-0.5 px-2 py-0.5 text-[10px] bg-slate-700 hover:bg-slate-600 rounded"
-              >
-                <Plus size={10} /> Add Leg
-              </button>
+              <Button variant="secondary" size="xs" icon={Plus} onClick={addLeg}>Add Leg</Button>
             </div>
           </div>
 
           {legs.length === 0 && (
-            <div className="text-xs text-slate-500 py-2 text-center">
-              Add legs manually or import your current strategy from the simulator.
-            </div>
+            <EmptyState
+              icon={Inbox}
+              title="No legs yet"
+              helper="Add legs manually or import your current strategy from the simulator."
+              size="sm"
+            />
           )}
 
           {legs.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-lg border border-slate-800">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-slate-500 text-left">
-                    <th className="px-1.5 py-1">Type</th>
-                    <th className="px-1.5 py-1">Dir</th>
-                    <th className="px-1.5 py-1 text-right">Strike</th>
-                    <th className="px-1.5 py-1 text-right">IV %</th>
-                    <th className="px-1.5 py-1 text-right">Qty</th>
-                    <th className="px-1.5 py-1 text-right">Premium</th>
-                    <th className="px-1.5 py-1"></th>
+                  <tr className="text-slate-500 text-left bg-slate-900">
+                    <th className="px-1.5 py-1.5 sticky-th">Type</th>
+                    <th className="px-1.5 py-1.5 sticky-th">Dir</th>
+                    <th className="px-1.5 py-1.5 text-right sticky-th">Strike</th>
+                    <th className="px-1.5 py-1.5 text-right sticky-th">IV %</th>
+                    <th className="px-1.5 py-1.5 text-right sticky-th">Qty</th>
+                    <th className="px-1.5 py-1.5 text-right sticky-th">Premium</th>
+                    <th className="px-1.5 py-1.5 sticky-th"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {legsWithEntryPremiums.map((leg, i) => (
-                    <tr key={i} className="border-t border-slate-800/50">
-                      <td className="px-1.5 py-1">
+                    <tr key={i} className="border-t border-slate-800/50 hover:bg-slate-800/30">
+                      <td className="px-1.5 py-1.5">
                         <select value={leg.type} onChange={(e) => updateLeg(i, 'type', e.target.value)}
+                          aria-label={`Leg ${i + 1} type`}
                           className="bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-xs">
                           <option value="call">Call</option>
                           <option value="put">Put</option>
                         </select>
                       </td>
-                      <td className="px-1.5 py-1">
+                      <td className="px-1.5 py-1.5">
                         <select value={leg.direction} onChange={(e) => updateLeg(i, 'direction', e.target.value)}
+                          aria-label={`Leg ${i + 1} direction`}
                           className="bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-xs">
                           <option value="long">Long</option>
                           <option value="short">Short</option>
                         </select>
                       </td>
-                      <td className="px-1.5 py-1">
+                      <td className="px-1.5 py-1.5">
                         <input type="number" value={leg.strike}
                           onChange={(e) => updateLeg(i, 'strike', +e.target.value || 0)}
+                          aria-label={`Leg ${i + 1} strike`}
+                          min="0.01" step="0.5"
                           className="w-16 text-right" />
                       </td>
-                      <td className="px-1.5 py-1">
+                      <td className="px-1.5 py-1.5">
                         <input type="number" value={(leg.iv * 100).toFixed(0)}
                           onChange={(e) => updateLeg(i, 'iv', (+e.target.value || 0) / 100)}
-                          className="w-14 text-right" step="1" />
+                          aria-label={`Leg ${i + 1} IV percent`}
+                          className="w-14 text-right" step="1" min="1" max="300" />
                       </td>
-                      <td className="px-1.5 py-1">
+                      <td className="px-1.5 py-1.5">
                         <input type="number" value={leg.quantity}
                           onChange={(e) => updateLeg(i, 'quantity', Math.max(1, +e.target.value || 1))}
-                          className="w-12 text-right" min="1" />
+                          aria-label={`Leg ${i + 1} quantity`}
+                          className="w-12 text-right" min="1" step="1" />
                       </td>
-                      <td className="px-1.5 py-1 text-right font-mono text-slate-400">
-                        ${leg.premium.toFixed(2)}
+                      <td className="px-1.5 py-1.5 text-right font-mono text-slate-400">
+                        {formatCurrency(leg.premium)}
                       </td>
-                      <td className="px-1.5 py-1">
-                        <button onClick={() => removeLeg(i)} className="p-0.5 text-red-500/60 hover:text-red-400">
-                          <Trash2 size={12} />
-                        </button>
+                      <td className="px-1.5 py-1.5">
+                        <ConfirmButton
+                          onConfirm={() => removeLeg(i)}
+                          ariaLabel={`Remove leg ${i + 1}`}
+                          confirmLabel="Remove"
+                        />
                       </td>
                     </tr>
                   ))}
@@ -517,7 +532,7 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
               {entryPrice && legs.length > 0 && (
                 <div className="text-xs text-slate-400 mt-1 px-1.5">
                   Net cost at entry: <span className={`font-mono font-semibold ${netCost >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {fmtMoney(netCost)}
+                    {formatCurrency(netCost)}
                   </span>
                   <span className="text-slate-600 ml-1">(premiums auto-calculated via BSM at entry spot)</span>
                 </div>
@@ -529,21 +544,12 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
 
       {/* Run button */}
       {legs.length > 0 && entryDate && (
-        <button
-          onClick={run}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded text-xs font-medium"
-        >
-          {loading ? <Loader size={13} className="animate-spin" /> : <Play size={13} />}
+        <Button variant="primary" size="md" icon={loading ? undefined : Play} loading={loading} onClick={run}>
           {loading ? 'Running...' : 'Run Manual Backtest'}
-        </button>
+        </Button>
       )}
 
-      {error && (
-        <div className="flex items-center gap-1.5 text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded">
-          <AlertTriangle size={13} /> {error}
-        </div>
-      )}
+      {error && <ErrorBox intent="error">{error}</ErrorBox>}
 
       {result && <BacktestResultCard result={result} />}
     </div>
@@ -555,6 +561,7 @@ function ManualBacktest({ onResult, onUpdate, currentLegs, underlyingPrice, shar
    ══════════════════════════════════════════════════════════ */
 
 function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios }) {
+  const toast = useToast();
   const [symbol, setSymbol] = useState('SPY');
   const [strategy, setStrategy] = useState(STRATEGY_NAMES[0]);
   const [dte, setDte] = useState(30);
@@ -628,15 +635,17 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
       setResult(res);
       if (existingPortfolio) {
         onUpdate(res.portfolio);
+        toast.show(`Appended to "${existingPortfolio.name}"`, { intent: 'success' });
       } else {
         onResult(res.portfolio);
+        toast.show('Automated backtest complete — portfolio saved', { intent: 'success' });
       }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, trailingStop, managementDte, riskFreeRate, divYield, bidAskSpread, positionSizing, riskPct, useSkew, onResult, onUpdate, useShared, sharedPriceData, targetPortfolioId, backtestPortfolios]);
+  }, [symbol, strategy, dte, entryInterval, iv, capital, commission, stopLoss, takeProfit, trailingStop, managementDte, riskFreeRate, divYield, bidAskSpread, positionSizing, riskPct, useSkew, onResult, onUpdate, useShared, sharedPriceData, targetPortfolioId, backtestPortfolios, toast]);
 
   return (
     <div className="space-y-3">
@@ -664,7 +673,7 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
       {/* Core parameters */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Symbol</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Symbol</span>
           <input
             type="text" value={useShared ? (sharedPriceData?.symbol || symbol) : symbol}
             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
@@ -673,7 +682,7 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
           />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Strategy</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Strategy</span>
           <select
             value={strategy} onChange={(e) => setStrategy(e.target.value)}
             className="px-2 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700"
@@ -684,15 +693,15 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
           </select>
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">DTE</span>
-          <input type="number" value={dte} onChange={(e) => setDte(+e.target.value || 30)} className="px-2 py-1 rounded" min="1" />
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">DTE (days)</span>
+          <input type="number" value={dte} onChange={(e) => setDte(+e.target.value || 30)} className="px-2 py-1 rounded" min="1" step="1" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Entry Interval (days)</span>
-          <input type="number" value={entryInterval} onChange={(e) => setEntryInterval(+e.target.value || 30)} className="px-2 py-1 rounded" min="1" />
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Entry Interval (days)</span>
+          <input type="number" value={entryInterval} onChange={(e) => setEntryInterval(+e.target.value || 30)} className="px-2 py-1 rounded" min="1" step="1" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500 flex items-center gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-slate-500 flex items-center gap-1">
             ATM IV %
             {sharedHasVix
               ? <span className="text-emerald-400 font-medium">(using VIX)</span>
@@ -709,41 +718,41 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
           />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Starting Capital $</span>
-          <input type="number" value={capital} onChange={(e) => setCapital(+e.target.value || 10000)} className="px-2 py-1 rounded" min="100" />
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Starting Capital $</span>
+          <input type="number" value={capital} onChange={(e) => setCapital(+e.target.value || 10000)} className="px-2 py-1 rounded" min="100" step="100" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Commission / contract $</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Commission / Contract $</span>
           <input type="number" value={commission} onChange={(e) => setCommission(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" step="0.05" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Risk-Free Rate %</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Risk-Free Rate %</span>
           <input type="number" value={riskFreeRate} onChange={(e) => setRiskFreeRate(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" step="0.5" />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-slate-500">Div Yield %</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Div Yield %</span>
           <input type="number" value={divYield} onChange={(e) => setDivYield(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" step="0.1" />
         </label>
       </div>
 
       {/* Exit rules */}
       <div>
-        <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1.5">Exit Rules</div>
+        <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mb-1.5">Exit Rules</div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
           <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">Stop Loss % (0=off)</span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-500">Stop Loss % (0=off)</span>
             <input type="number" value={stopLoss} onChange={(e) => setStopLoss(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" />
           </label>
           <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">Take Profit % (0=off)</span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-500">Take Profit % (0=off)</span>
             <input type="number" value={takeProfit} onChange={(e) => setTakeProfit(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" />
           </label>
           <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">Trailing Stop % (0=off)</span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-500">Trailing Stop % (0=off)</span>
             <input type="number" value={trailingStop} onChange={(e) => setTrailingStop(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" title="Close when P&L drops this % from its peak" />
           </label>
           <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">Manage at DTE (0=off)</span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-500">Manage at DTE (0=off)</span>
             <input type="number" value={managementDte} onChange={(e) => setManagementDte(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" title="Close when days-to-expiry reaches this value" />
           </label>
         </div>
@@ -754,11 +763,11 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
         <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1.5">Advanced</div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
           <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">Bid-Ask Spread % (0=off)</span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-500">Bid-Ask Spread % (0=off)</span>
             <input type="number" value={bidAskSpread} onChange={(e) => setBidAskSpread(+e.target.value || 0)} className="px-2 py-1 rounded" min="0" max="50" step="0.5" title="Half-spread applied at each fill as % of option price" />
           </label>
           <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">Position Sizing</span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-500">Position Sizing</span>
             <select value={positionSizing} onChange={(e) => setPositionSizing(e.target.value)}
               className="px-2 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700">
               <option value="fixed">Fixed (1 contract)</option>
@@ -767,7 +776,7 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
           </label>
           {positionSizing === 'fractional' && (
             <label className="flex flex-col gap-0.5">
-              <span className="text-slate-500">Risk per Trade %</span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">Risk per Trade %</span>
               <input type="number" value={riskPct} onChange={(e) => setRiskPct(+e.target.value || 1)} className="px-2 py-1 rounded" min="0.1" max="100" step="0.5" title="% of current capital allocated per debit trade" />
             </label>
           )}
@@ -801,20 +810,18 @@ function AutoBacktest({ onResult, onUpdate, sharedPriceData, backtestPortfolios 
         )}
       </div>
 
-      <button
+      <Button
+        variant="primary"
+        size="md"
+        icon={loading ? undefined : Play}
+        loading={loading}
         onClick={run}
-        disabled={loading}
-        className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded text-xs font-medium"
+        className="!bg-purple-600 hover:!bg-purple-500 !border-purple-500/40"
       >
-        {loading ? <Loader size={13} className="animate-spin" /> : <Play size={13} />}
         {loading ? 'Running Backtest...' : 'Run Automated Backtest'}
-      </button>
+      </Button>
 
-      {error && (
-        <div className="flex items-center gap-1.5 text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded">
-          <AlertTriangle size={13} /> {error}
-        </div>
-      )}
+      {error && <ErrorBox intent="error">{error}</ErrorBox>}
 
       {result && <BacktestResultCard result={result} />}
     </div>
@@ -875,37 +882,39 @@ function BacktestResultCard({ result }) {
     <div className="bg-slate-800/50 rounded-lg p-3 space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+        <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
           Results
-          <span className="text-[10px] text-slate-500">
+          <span className="text-[10px] text-slate-500 normal-case tracking-normal">
             ({equityCurve.length} days, {firstSnap?.date} → {lastSnap?.date})
           </span>
         </div>
-        <button
+        <Button
+          variant="secondary"
+          size="xs"
+          icon={Download}
           onClick={exportCsv}
-          className="flex items-center gap-1 px-2 py-0.5 text-[10px] bg-slate-700 hover:bg-slate-600 rounded text-slate-300"
           title="Download trade log as CSV"
         >
-          <Download size={10} /> CSV
-        </button>
+          CSV
+        </Button>
       </div>
 
       {/* Core metrics grid */}
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-xs">
-        <Stat label="Total P&L" value={fmtMoney(metrics.totalPnl)} positive={metrics.totalPnl >= 0} />
-        <Stat label="Return" value={`${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%`} positive={returnPct >= 0} />
-        <Stat label="Win Rate" value={`${(metrics.winRate * 100).toFixed(1)}%`} />
-        <Stat label="Profit Factor" value={metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)} />
-        <Stat label="Max DD" value={`${(metrics.maxDrawdown * 100).toFixed(1)}%`} positive={false} />
-        <Stat label="Sharpe" value={metrics.sharpe.toFixed(2)} />
-        <Stat label="Sortino" value={metrics.sortino.toFixed(2)} />
-        <Stat label="Calmar" value={isFinite(metrics.calmar) ? metrics.calmar.toFixed(2) : '—'} />
-        <Stat label="Trades" value={metrics.totalTrades} />
-        <Stat label="Winners" value={metrics.winners} positive={true} />
-        <Stat label="Losers" value={metrics.losers} positive={false} />
-        <Stat label="Max Consec L" value={metrics.maxConsecLosers} positive={false} />
-        <Stat label="Avg Win" value={fmtMoney(metrics.avgWin)} positive={true} />
-        <Stat label="Avg Loss" value={fmtMoney(metrics.avgLoss)} positive={false} />
+        <StatCard size="sm" label="Total P&L" value={formatCurrency(metrics.totalPnl)} sign={metrics.totalPnl >= 0 ? 'positive' : 'negative'} />
+        <StatCard size="sm" label="Return" value={`${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%`} sign={returnPct >= 0 ? 'positive' : 'negative'} />
+        <StatCard size="sm" label="Win Rate" value={`${(metrics.winRate * 100).toFixed(1)}%`} />
+        <StatCard size="sm" label="Profit Factor" value={metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)} />
+        <StatCard size="sm" label="Max DD" value={`${(metrics.maxDrawdown * 100).toFixed(1)}%`} sign="negative" />
+        <StatCard size="sm" label="Sharpe" value={metrics.sharpe.toFixed(2)} />
+        <StatCard size="sm" label="Sortino" value={metrics.sortino.toFixed(2)} />
+        <StatCard size="sm" label="Calmar" value={isFinite(metrics.calmar) ? metrics.calmar.toFixed(2) : '—'} />
+        <StatCard size="sm" label="Trades" value={metrics.totalTrades} />
+        <StatCard size="sm" label="Winners" value={metrics.winners} sign="positive" />
+        <StatCard size="sm" label="Losers" value={metrics.losers} sign="negative" />
+        <StatCard size="sm" label="Max Consec L" value={metrics.maxConsecLosers} sign="negative" />
+        <StatCard size="sm" label="Avg Win" value={formatCurrency(metrics.avgWin)} sign="positive" />
+        <StatCard size="sm" label="Avg Loss" value={formatCurrency(metrics.avgLoss)} sign="negative" />
       </div>
 
       {/* Equity curve with buy-and-hold benchmark overlay */}
@@ -931,25 +940,25 @@ function BacktestResultCard({ result }) {
       {/* Per-year breakdown */}
       {metrics.yearlyReturns && metrics.yearlyReturns.length > 1 && (
         <div>
-          <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1">Year-by-Year</div>
-          <div className="overflow-x-auto">
+          <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Year-by-Year</div>
+          <div className="overflow-x-auto rounded border border-slate-800">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-slate-500 text-left">
-                  <th className="px-1.5 py-0.5">Year</th>
-                  <th className="px-1.5 py-0.5 text-right">Return</th>
-                  <th className="px-1.5 py-0.5 text-right">P&L</th>
+                <tr className="text-slate-500 text-left bg-slate-900">
+                  <th className="px-1.5 py-1 sticky-th">Year</th>
+                  <th className="px-1.5 py-1 text-right sticky-th">Return</th>
+                  <th className="px-1.5 py-1 text-right sticky-th">P&L</th>
                 </tr>
               </thead>
               <tbody>
                 {metrics.yearlyReturns.map(({ year, returnPct: rp, pnl }) => (
-                  <tr key={year} className="border-t border-slate-800/50">
-                    <td className="px-1.5 py-0.5 text-slate-400">{year}</td>
-                    <td className={`px-1.5 py-0.5 text-right font-mono font-semibold ${rp >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <tr key={year} className="border-t border-slate-800/50 hover:bg-slate-800/30">
+                    <td className="px-1.5 py-1 text-slate-400">{year}</td>
+                    <td className={`px-1.5 py-1 text-right font-mono font-semibold ${rp >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {rp >= 0 ? '+' : ''}{rp.toFixed(1)}%
                     </td>
-                    <td className={`px-1.5 py-0.5 text-right font-mono ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {fmtMoney(pnl)}
+                    <td className={`px-1.5 py-1 text-right font-mono ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {formatCurrency(pnl)}
                     </td>
                   </tr>
                 ))}
@@ -958,19 +967,6 @@ function BacktestResultCard({ result }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value, positive }) {
-  const color =
-    positive === true ? 'text-green-400' :
-    positive === false ? 'text-red-400' :
-    'text-slate-200';
-  return (
-    <div>
-      <div className="text-[10px] text-slate-500 uppercase">{label}</div>
-      <div className={`font-mono font-semibold ${color}`}>{value}</div>
     </div>
   );
 }

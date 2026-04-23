@@ -30,6 +30,7 @@ input[type="number"]:focus,
 select:focus {
   outline: none;
   border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
 }
 
 input[type="range"] {
@@ -52,6 +53,25 @@ input[type="text"]:focus,
 input[type="password"]:focus {
   outline: none;
   border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.55);
+  border-radius: 4px;
+}
+
+.sticky-th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #111827;
+}
+
+/* Reset focus-visible on buttons that already handle their own focus ring */
+button.no-default-focus-ring:focus-visible {
+  box-shadow: none;
 }
 
 button {

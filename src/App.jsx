@@ -22,12 +22,21 @@ import HistoricalData from './components/HistoricalData.jsx';
 import PortfolioTracker from './components/PortfolioTracker.jsx';
 import BacktestPanel from './components/BacktestPanel.jsx';
 import ForwardTestPanel from './components/ForwardTestPanel.jsx';
+import Button from './components/ui/Button.jsx';
+import Collapsible from './components/ui/Collapsible.jsx';
+import ErrorBox from './components/ui/ErrorBox.jsx';
+import EmptyState from './components/ui/EmptyState.jsx';
+import ConfirmButton from './components/ui/ConfirmButton.jsx';
+import LegCard from './components/LegCard.jsx';
+import { formatCurrency, formatNumber } from './lib/format.js';
+import { useToast } from './components/ui/Toast.jsx';
 
 let nextId = 1;
 const makeId = () => `leg-${nextId++}`;
-const fmtNum = (n, d = 2) => (Math.abs(n) < 0.005 ? '0.00' : n.toFixed(d));
+const fmtNum = formatNumber;
 
 export default function App() {
+  const toast = useToast();
   /* ── State ────────────────────────────────────────────── */
   const [underlyingPrice, setUnderlyingPrice] = useState(100);
   const [riskFreeRate, setRiskFreeRate] = useState(0.05);
@@ -83,6 +92,15 @@ export default function App() {
     setPortfolios((prev) => prev.map((p) => p.id === portfolio.id ? portfolio : p));
     setSelectedPortfolioId(portfolio.id);
   }, []);
+
+  const handleRenamePortfolio = useCallback((id, name) => {
+    setPortfolios((prev) => {
+      const updated = prev.map((p) => p.id === id ? { ...p, name } : p);
+      savePortfolios(updated);
+      return updated;
+    });
+    toast.show('Portfolio renamed', { intent: 'success' });
+  }, [toast]);
 
   /** Per-leg time helpers — each leg can have its own DTE. */
   const legDte = (leg) => leg.dte ?? daysToExpiry;
@@ -392,7 +410,8 @@ export default function App() {
     setActivePreset(null);
     setTimePercent(100);
     setIvShift(0);
-  }, []);
+    toast.show('Strategy reset', { intent: 'info' });
+  }, [toast]);
 
   /* ── Save / Load / Export / Import handlers ──────────── */
 
@@ -422,24 +441,28 @@ export default function App() {
     const updated = saveSession(name, data);
     setSavedSessions(updated);
     setSaveNameInput('');
-  }, [saveNameInput, getCurrentSession]);
+    toast.show(`Session "${name}" saved`, { intent: 'success' });
+  }, [saveNameInput, getCurrentSession, toast]);
 
   const handleLoadSession = useCallback((entry) => {
     restoreSession(entry.data);
     setShowSaveLoad(false);
     setImportError('');
     setImportSuccess('');
-  }, [restoreSession]);
+    toast.show(`Loaded "${entry.name}"`, { intent: 'success' });
+  }, [restoreSession, toast]);
 
   const handleDeleteSession = useCallback((id) => {
     const updated = deleteSavedSession(id);
     setSavedSessions(updated);
-  }, []);
+    toast.show('Session deleted', { intent: 'info' });
+  }, [toast]);
 
   const handleExport = useCallback((includePortfolios) => {
     const data = getCurrentSession();
     exportToFile(data, includePortfolios ? portfolios : null);
-  }, [getCurrentSession, portfolios]);
+    toast.show(includePortfolios ? 'Session + portfolios exported' : 'Session exported', { intent: 'success' });
+  }, [getCurrentSession, portfolios, toast]);
 
   const handleImportFile = useCallback((e) => {
     setImportError('');
@@ -526,7 +549,7 @@ export default function App() {
             <span className="text-xs text-slate-400 ml-2 hidden sm:inline">{tickerLabel}</span>
           )}
         </div>
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-x-4 gap-y-2 flex-wrap">
           <label className="flex items-center gap-1.5 text-xs text-slate-400">
             Spot $
             <input
@@ -559,30 +582,33 @@ export default function App() {
               className="w-12 text-right" step="0.5"
             />
           </label>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Save}
             onClick={() => { setShowSaveLoad(!showSaveLoad); setImportError(''); setImportSuccess(''); }}
-            className={`flex items-center gap-1 px-2.5 py-1 border rounded text-xs ${
-              showSaveLoad
-                ? 'border-blue-500 text-blue-400 bg-blue-500/10'
-                : 'border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500'
-            }`}
+            className={showSaveLoad ? '!border-blue-500 !text-blue-400 !bg-blue-500/10' : ''}
           >
-            <Save size={13} /> Save / Load
-          </button>
-          <button
+            Save / Load
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Download}
             onClick={() => handleExport(false)}
-            className="flex items-center gap-1 px-2.5 py-1 border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 rounded text-xs"
             title="Export session as JSON"
           >
-            <Download size={13} /> Export
-          </button>
-          <button
+            Export
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Upload}
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1 px-2.5 py-1 border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 rounded text-xs"
             title="Import session from JSON"
           >
-            <Upload size={13} /> Import
-          </button>
+            Import
+          </Button>
           <input
             ref={fileInputRef}
             type="file"
@@ -590,12 +616,9 @@ export default function App() {
             className="hidden"
             onChange={handleImportFile}
           />
-          <button
-            onClick={resetAll}
-            className="flex items-center gap-1 px-2.5 py-1 border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 rounded text-xs"
-          >
-            <RotateCcw size={13} /> Reset
-          </button>
+          <Button variant="ghost" size="sm" icon={RotateCcw} onClick={resetAll}>
+            Reset
+          </Button>
         </div>
       </header>
 
@@ -604,10 +627,15 @@ export default function App() {
         <div className="px-5 max-w-[1280px] mx-auto fade-in">
           <div className="mt-3 bg-[#111827] border border-slate-700 rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-semibold text-slate-200">Save &amp; Load Sessions</span>
-              <button onClick={() => setShowSaveLoad(false)} className="text-slate-500 hover:text-slate-300">
-                <X size={16} />
-              </button>
+              <span className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Save &amp; Load Sessions</span>
+              <Button
+                variant="ghost"
+                size="xs"
+                iconOnly
+                icon={X}
+                aria-label="Close save/load panel"
+                onClick={() => setShowSaveLoad(false)}
+              />
             </div>
 
             {/* Save current */}
@@ -619,60 +647,44 @@ export default function App() {
                 onChange={(e) => setSaveNameInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                 className="flex-1 text-sm px-3 py-1.5 rounded"
+                aria-label="Session name"
               />
-              <button
-                onClick={handleSave}
-                className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold"
-              >
-                <Save size={13} /> Save Current
-              </button>
+              <Button variant="primary" size="md" icon={Save} onClick={handleSave}>
+                Save Current
+              </Button>
             </div>
 
             {/* Export with portfolios */}
-            <div className="flex gap-2 mb-4 border-t border-slate-800 pt-3">
-              <button
-                onClick={() => handleExport(false)}
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 rounded text-xs"
-              >
-                <Download size={13} /> Export Session
-              </button>
-              <button
-                onClick={() => handleExport(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 rounded text-xs"
-              >
-                <Download size={13} /> Export Session + Portfolios
-              </button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 rounded text-xs"
-              >
-                <Upload size={13} /> Import from File
-              </button>
+            <div className="flex gap-2 mb-4 border-t border-slate-800 pt-3 flex-wrap">
+              <Button variant="ghost" size="md" icon={Download} onClick={() => handleExport(false)}>
+                Export Session
+              </Button>
+              <Button variant="ghost" size="md" icon={Download} onClick={() => handleExport(true)}>
+                Export Session + Portfolios
+              </Button>
+              <Button variant="ghost" size="md" icon={Upload} onClick={() => fileInputRef.current?.click()}>
+                Import from File
+              </Button>
             </div>
 
             {/* Status messages */}
-            {importError && (
-              <div className="mb-3 text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2">
-                {importError}
-              </div>
-            )}
-            {importSuccess && (
-              <div className="mb-3 text-xs text-green-400 bg-green-400/10 border border-green-400/20 rounded px-3 py-2">
-                {importSuccess}
-              </div>
-            )}
+            {importError && <div className="mb-3"><ErrorBox intent="error">{importError}</ErrorBox></div>}
+            {importSuccess && <div className="mb-3"><ErrorBox intent="info">{importSuccess}</ErrorBox></div>}
 
             {/* Saved sessions list */}
             {savedSessions.length === 0 ? (
-              <div className="text-xs text-slate-600 text-center py-3">
-                No saved sessions yet. Save your current setup to load it later.
-              </div>
+              <EmptyState
+                icon={FolderOpen}
+                title="No saved sessions yet"
+                helper="Save your current setup to load it later."
+                size="sm"
+              />
             ) : (
               <div className="space-y-1.5 max-h-60 overflow-y-auto">
                 {savedSessions.map((entry) => (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between bg-slate-800/50 border border-slate-800 rounded px-3 py-2 group"
+                    className="flex items-center justify-between bg-slate-800/50 border border-slate-800 rounded px-3 py-2 group hover:bg-slate-800/70"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-slate-200 truncate">{entry.name}</div>
@@ -681,22 +693,23 @@ export default function App() {
                         {' · '}
                         {entry.data.legs?.length || 0} legs
                         {entry.data.tickerLabel ? ` · ${entry.data.tickerLabel.split(' ')[0]}` : ''}
-                        {' · $'}{entry.data.underlyingPrice}
+                        {' · '}{formatCurrency(entry.data.underlyingPrice)}
                       </div>
                     </div>
-                    <div className="flex gap-1.5 ml-3">
-                      <button
+                    <div className="flex gap-1.5 ml-3 items-center">
+                      <Button
+                        variant="primary"
+                        size="xs"
+                        icon={FolderOpen}
                         onClick={() => handleLoadSession(entry)}
-                        className="flex items-center gap-1 px-2.5 py-1 bg-blue-600/80 hover:bg-blue-500 text-white rounded text-[11px] font-medium"
                       >
-                        <FolderOpen size={12} /> Load
-                      </button>
-                      <button
-                        onClick={() => handleDeleteSession(entry.id)}
-                        className="p-1 text-red-500/60 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                        Load
+                      </Button>
+                      <ConfirmButton
+                        onConfirm={() => handleDeleteSession(entry.id)}
+                        ariaLabel={`Delete session ${entry.name}`}
+                        confirmLabel="Delete"
+                      />
                     </div>
                   </div>
                 ))}
@@ -708,7 +721,7 @@ export default function App() {
 
       <div className="px-5 pb-6 max-w-[1280px] mx-auto">
         {/* ── Tab Navigation ──────────────────────────────── */}
-        <div className="flex gap-1 mt-4 border-b border-slate-800">
+        <div className="flex gap-1 mt-4 border-b border-slate-800" role="tablist" aria-label="Main views">
           {[
             { id: 'simulation', label: 'Simulation', icon: LineChart },
             { id: 'backtesting', label: 'Backtesting', icon: FlaskConical },
@@ -716,8 +729,12 @@ export default function App() {
           ].map((tab) => (
             <button
               key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`tab-panel-${tab.id}`}
+              id={`tab-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px focus-visible:outline-none focus-visible:text-blue-300 ${
                 activeTab === tab.id
                   ? 'border-blue-500 text-blue-400'
                   : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-600'
@@ -731,37 +748,30 @@ export default function App() {
 
         {/* ══ SIMULATION TAB ══════════════════════════════════ */}
         {activeTab === 'simulation' && (
-          <div className="fade-in">
+          <div className="fade-in" role="tabpanel" id="tab-panel-simulation" aria-labelledby="tab-simulation">
             {/* ── Historical Data ─────────────────────────── */}
             <div className="mt-4">
-              <button
-                onClick={() => setExpandHistory(!expandHistory)}
-                className="flex items-center gap-1.5 mt-4 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
+              <Collapsible
+                title="Historical Data"
+                icon={Clock}
+                open={expandHistory}
+                onToggle={setExpandHistory}
               >
-                <Clock size={13} />
-                Historical Data
-                {expandHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              {expandHistory && (
                 <HistoricalData
                   onAddLeg={addLegFromChain}
                   onHistoricalQuote={handleHistoricalQuote}
                   onDataLoaded={handleHistoricalDataLoaded}
                 />
-              )}
+              </Collapsible>
             </div>
 
             {/* ── Strategy Presets ─────────────────────────── */}
             <div className="mt-4">
-              <button
-                onClick={() => setExpandPresets(!expandPresets)}
-                className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
-              >
-                Strategy Presets
-                {expandPresets ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              {expandPresets && (
-                <div className="fade-in">
+              <Collapsible
+                title="Strategy Presets"
+                open={expandPresets}
+                onToggle={setExpandPresets}
+              ><div className="fade-in">
                   <div className="flex gap-1.5 mb-2.5">
                     <button
                       onClick={() => setFilterCat(null)}
@@ -793,12 +803,13 @@ export default function App() {
                       <button
                         key={name}
                         onClick={() => loadPreset(name)}
-                        className="px-3 py-1.5 text-xs rounded-md"
+                        className="px-3 py-1.5 text-xs rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
                         style={{
                           border: `1px solid ${activePreset === name ? CAT_COLORS[preset.category] : '#334155'}`,
                           background: activePreset === name ? CAT_COLORS[preset.category] + '15' : '#1e293b',
                           color: activePreset === name ? CAT_COLORS[preset.category] : '#cbd5e1',
                         }}
+                        aria-pressed={activePreset === name}
                       >
                         <span className="mr-1">{preset.icon}</span>
                         {name}
@@ -806,7 +817,7 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-              )}
+              </Collapsible>
             </div>
 
             {/* ── Payoff Chart ────────────────────────────── */}
@@ -816,7 +827,7 @@ export default function App() {
                   <LineChart size={40} className="text-slate-700" strokeWidth={1.2} />
                   <div>
                     <div className="text-slate-400 text-sm font-medium">No strategy loaded</div>
-                    <div className="text-slate-600 text-xs mt-1">
+                    <div className="text-slate-600 text-xs mt-1" role="note">
                       Pick a quick-start below, or click <span className="text-blue-400">+ Add Leg</span> to build your own
                     </div>
                   </div>
@@ -1026,32 +1037,32 @@ export default function App() {
                 </div>
                 <div className="flex gap-2">
                   {legsWithPremiums.length > 0 && (
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={showLegLines ? Eye : EyeOff}
                       onClick={() => setShowLegLines(!showLegLines)}
-                      className="flex items-center gap-1 px-2.5 py-1 border border-slate-700 text-slate-400 hover:text-slate-200 rounded text-[11px]"
+                      aria-pressed={showLegLines}
                     >
-                      {showLegLines ? <Eye size={12} /> : <EyeOff size={12} />} Leg Lines
-                    </button>
+                      Leg Lines
+                    </Button>
                   )}
-                  <button
-                    onClick={addLeg}
-                    className="flex items-center gap-1 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold"
-                  >
-                    <Plus size={14} /> Add Leg
-                  </button>
+                  <Button variant="primary" size="sm" icon={Plus} onClick={addLeg}>
+                    Add Leg
+                  </Button>
                 </div>
               </div>
 
               {legsWithPremiums.length > 0 && (
-                <div className="bg-[#111827] rounded-lg border border-slate-800 overflow-hidden">
+                <div className="bg-[#111827] rounded-lg border border-slate-800 overflow-hidden hidden md:block">
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse text-[13px]">
                       <thead>
-                        <tr className="border-b border-slate-800">
+                        <tr className="border-b border-slate-800 bg-[#111827]">
                           {['', 'Type', 'Side', 'Strike', 'IV %', 'DTE', 'Created', 'Open Date', 'Qty', 'Premium', 'Δ', 'Γ', 'Θ', 'ν', ''].map((h, i) => (
                             <th
                               key={i}
-                              className="px-2.5 py-2 text-left text-[10px] text-slate-500 uppercase tracking-wider font-semibold whitespace-nowrap"
+                              className="px-2.5 py-2 text-left text-[10px] text-slate-500 uppercase tracking-wider font-semibold whitespace-nowrap sticky-th"
                             >
                               {h}
                             </th>
@@ -1069,7 +1080,7 @@ export default function App() {
                           const isAtm = Math.abs(leg.strike - underlyingPrice) / underlyingPrice < 0.005;
                           const isItm = !isAtm && (leg.type === 'call' ? leg.strike < underlyingPrice : leg.strike > underlyingPrice);
                           return (
-                            <tr key={leg.id} className="border-b border-slate-800/20 fade-in">
+                            <tr key={leg.id} className="border-b border-slate-800/20 hover:bg-slate-800/20 fade-in">
                               <td className="px-2.5 py-1.5">
                                 <div
                                   className="w-2.5 h-2.5 rounded-sm"
@@ -1154,28 +1165,32 @@ export default function App() {
                               <td className="px-2 py-1.5 font-mono text-[11px] text-pink-400">{fmtNum(g.theta)}</td>
                               <td className="px-2 py-1.5 font-mono text-[11px] text-emerald-400">{fmtNum(g.vega)}</td>
                               <td className="px-2 py-1.5">
-                                <div className="flex gap-1">
-                                  <button
+                                <div className="flex gap-1 items-center">
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    iconOnly
+                                    icon={leg.visible ? Eye : EyeOff}
+                                    aria-label={leg.visible ? `Hide leg ${i + 1} from chart` : `Show leg ${i + 1} on chart`}
                                     onClick={() => toggleLeg(leg.id)}
-                                    className="p-0.5 text-slate-500 hover:text-slate-300"
+                                    className="!text-slate-500 hover:!text-slate-300 !border-transparent"
                                     title="Show/hide on chart"
-                                  >
-                                    {leg.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-                                  </button>
-                                  <button
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    iconOnly
+                                    icon={Copy}
+                                    aria-label={`Duplicate leg ${i + 1}`}
                                     onClick={() => duplicateLeg(leg.id)}
-                                    className="p-0.5 text-slate-500 hover:text-slate-300"
+                                    className="!text-slate-500 hover:!text-slate-300 !border-transparent"
                                     title="Duplicate leg"
-                                  >
-                                    <Copy size={14} />
-                                  </button>
-                                  <button
-                                    onClick={() => removeLeg(leg.id)}
-                                    className="p-0.5 text-red-500/70 hover:text-red-400"
-                                    title="Remove leg"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
+                                  />
+                                  <ConfirmButton
+                                    onConfirm={() => removeLeg(leg.id)}
+                                    ariaLabel={`Remove leg ${i + 1}`}
+                                    confirmLabel="Remove"
+                                  />
                                 </div>
                               </td>
                             </tr>
@@ -1186,13 +1201,45 @@ export default function App() {
                   </div>
                 </div>
               )}
+
+              {/* Mobile card layout */}
+              {legsWithPremiums.length > 0 && (
+                <div className="md:hidden space-y-2">
+                  {legsWithPremiums.map((leg, i) => {
+                    const vt = legViewT(leg);
+                    const lt = legT(leg);
+                    const g = legGreeks(
+                      { ...leg, iv: leg.iv + ivShift / 100 },
+                      underlyingPrice, vt > 0 ? vt : lt, riskFreeRate, dividendYield
+                    );
+                    const isAtm = Math.abs(leg.strike - underlyingPrice) / underlyingPrice < 0.005;
+                    const isItm = !isAtm && (leg.type === 'call' ? leg.strike < underlyingPrice : leg.strike > underlyingPrice);
+                    return (
+                      <LegCard
+                        key={leg.id}
+                        leg={leg}
+                        index={i}
+                        greeks={g}
+                        legDte={legDte(leg)}
+                        isAtm={isAtm}
+                        isItm={isItm}
+                        onUpdate={updateLeg}
+                        onToggle={toggleLeg}
+                        onDuplicate={duplicateLeg}
+                        onRemove={removeLeg}
+                        color={LEG_COLORS[i % LEG_COLORS.length]}
+                      />
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* ══ BACKTESTING TAB ═════════════════════════════════ */}
         {activeTab === 'backtesting' && (
-          <div className="fade-in">
+          <div className="fade-in" role="tabpanel" id="tab-panel-backtesting" aria-labelledby="tab-backtesting">
             {/* ── Backtesting ──────────────────────────────── */}
             <div className="mt-4">
               <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -1224,7 +1271,7 @@ export default function App() {
                 portfolios={portfolios.filter((p) => p.mode === 'backtest')}
                 onDelete={handleDeletePortfolio}
                 onDeleteTrade={handleDeleteTrade}
-                onSelect={setSelectedPortfolioId}
+                onRename={handleRenamePortfolio}
                 selectedId={selectedPortfolioId}
               />
             </div>
@@ -1233,7 +1280,7 @@ export default function App() {
 
         {/* ══ FORWARD TESTING TAB ═════════════════════════════ */}
         {activeTab === 'forward' && (
-          <div className="fade-in">
+          <div className="fade-in" role="tabpanel" id="tab-panel-forward" aria-labelledby="tab-forward">
             {/* ── Forward Testing (Paper Trading) ──────────── */}
             <div className="mt-4">
               <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -1265,7 +1312,7 @@ export default function App() {
                 portfolios={portfolios.filter((p) => p.mode === 'forward')}
                 onDelete={handleDeletePortfolio}
                 onDeleteTrade={handleDeleteTrade}
-                onSelect={setSelectedPortfolioId}
+                onRename={handleRenamePortfolio}
                 selectedId={selectedPortfolioId}
               />
             </div>
