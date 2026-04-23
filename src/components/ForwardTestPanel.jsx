@@ -93,14 +93,14 @@ export default function ForwardTestPanel({ portfolios, setPortfolios, underlying
     const closePrice = parseFloat(closePriceInput);
     if (isNaN(closePrice) || closePrice < 0) return;
     const updated = portfolios.map((p) =>
-      p.id === activePf.id ? closeTrade(p, closingTradeId, closePrice) : p
+      p.id === activePf.id ? closeTrade(p, closingTradeId, closePrice, null, underlyingPrice) : p
     );
     setPortfolios(updated);
     savePortfolios(updated);
     setClosingTradeId(null);
     setClosePriceInput('');
     toast.show('Trade closed', { intent: 'success' });
-  }, [activePf, closingTradeId, closePriceInput, portfolios, setPortfolios, toast]);
+  }, [activePf, closingTradeId, closePriceInput, underlyingPrice, portfolios, setPortfolios, toast]);
 
   const expireTradeHandler = useCallback((tradeId) => {
     if (!activePf) return;

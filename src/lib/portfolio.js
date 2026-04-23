@@ -50,6 +50,7 @@ export function createTrade({
     openedAt: openedAt || new Date().toISOString(),
     closedAt: null,
     closePrice: null,
+    closeSpotPrice: null,
     status: 'open', // 'open' | 'closed' | 'expired'
   };
 }
@@ -79,12 +80,18 @@ export function addTrade(portfolio, trade) {
   return { ...portfolio, trades: [...portfolio.trades, trade] };
 }
 
-export function closeTrade(portfolio, tradeId, closePrice, closedAt = null) {
+export function closeTrade(portfolio, tradeId, closePrice, closedAt = null, closeSpotPrice = null) {
   return {
     ...portfolio,
     trades: portfolio.trades.map((t) =>
       t.id === tradeId
-        ? { ...t, closePrice, closedAt: closedAt || new Date().toISOString(), status: 'closed' }
+        ? {
+            ...t,
+            closePrice,
+            closedAt: closedAt || new Date().toISOString(),
+            closeSpotPrice: closeSpotPrice ?? t.closeSpotPrice ?? null,
+            status: 'closed',
+          }
         : t
     ),
   };
@@ -103,6 +110,7 @@ export function expireTrade(portfolio, tradeId, spotAtExpiry) {
         ...t,
         closePrice: intrinsic,
         closedAt: t.expiration,
+        closeSpotPrice: spotAtExpiry,
         status: 'expired',
       };
     }),

@@ -391,6 +391,7 @@ function TradesTab({ portfolio, onDeleteTrade }) {
               <th className="px-2 py-1.5 sticky-th">Dir</th>
               <th className="px-2 py-1.5 text-right sticky-th">Strike</th>
               <th className="px-2 py-1.5 text-right sticky-th">Spot@Entry</th>
+              <th className="px-2 py-1.5 text-right sticky-th">Spot@Exit</th>
               <th className="px-2 py-1.5 text-right sticky-th">Entry $</th>
               <th className="px-2 py-1.5 text-right sticky-th">Exit $</th>
               <th className="px-2 py-1.5 text-right sticky-th">IV</th>
@@ -427,6 +428,9 @@ function TradesTab({ portfolio, onDeleteTrade }) {
                   <td className="px-2 py-1.5 text-right font-mono">${t.strike}</td>
                   <td className="px-2 py-1.5 text-right font-mono text-slate-300">
                     {t.underlyingPrice != null ? formatCurrency(t.underlyingPrice) : '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-mono text-slate-400">
+                    {t.closeSpotPrice != null ? formatCurrency(t.closeSpotPrice) : '—'}
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono">{formatCurrency(t.premium)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">
